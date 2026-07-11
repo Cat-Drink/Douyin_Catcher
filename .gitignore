@@ -8,6 +8,7 @@ __pycache__/
 .coverage.*
 htmlcov/
 *.egg-info/
+.black_cache/
 
 # 虚拟环境
 .venv/
