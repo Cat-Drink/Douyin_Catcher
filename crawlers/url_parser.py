@@ -11,6 +11,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
+from urllib.parse import parse_qs, urlparse
+
+from crawlers.exceptions import InvalidURLFormatError
 
 if TYPE_CHECKING:
     from crawlers.http_client import HttpClient
@@ -120,3 +123,100 @@ class URLParser:
             return False
         host = host_match.group(1).split(":")[0]
         return host in _DOUYIN_DOMAINS
+
+    def identify_type(self, url: str) -> LinkType:
+        """根据 URL 路径与查询参数识别链接类型。
+
+        识别规则（按优先级）:
+            1. 路径含 ``/user/`` 或查询参数含 ``sec_user_id`` → ``'user_home'``
+            2. 路径含 ``/video/`` 或查询参数含 ``aweme_id`` → ``'video'``
+               （image_set / long_video 的最终判定依赖 v0.0.4 VideoParser 调用
+               detail 接口后的结果，URLParser 统一归为 ``'video'``）
+            3. 其他 → 抛 ``InvalidURLFormatError``
+
+        参数:
+            url: 已规范化的 URL（短链需先 follow_redirect 拿到最终 URL）。
+
+        返回:
+            LinkType 类型字符串。
+
+        异常:
+            InvalidURLFormatError: 无法从 URL 识别类型。
+        """
+        try:
+            parsed = urlparse(url)
+        except ValueError as e:
+            raise InvalidURLFormatError(f"URL 格式无效: {url}") from e
+        path = parsed.path or ""
+        query = parse_qs(parsed.query or "")
+        # 规则 1：用户主页
+        if "/user/" in path or "sec_user_id" in query:
+            return "user_home"
+        # 规则 2：视频/图文/长视频（统一归 video）
+        if "/video/" in path or "aweme_id" in query:
+            return "video"
+        # 规则 3：无法识别
+        raise InvalidURLFormatError(f"无法识别的抖音链接类型: {url}")
+
+    @staticmethod
+    def extract_aweme_id(url: str) -> str | None:
+        """从 URL 中提取 aweme_id。
+
+        支持两种格式（查询参数优先）：
+            - 查询参数：``?aweme_id={aweme_id}``
+            - 路径形式：``/video/{aweme_id}`` 或 ``/share/video/{aweme_id}``
+
+        参数:
+            url: 已规范化的 URL。
+
+        返回:
+            aweme_id 字符串；未找到返回 None。
+        """
+        try:
+            parsed = urlparse(url)
+        except ValueError:
+            return None
+        # 查询参数形式优先
+        query = parse_qs(parsed.query or "")
+        if "aweme_id" in query and query["aweme_id"]:
+            return query["aweme_id"][0]
+        # 路径形式：取 /video/ 后的段
+        path_parts = (parsed.path or "").split("/")
+        for i, part in enumerate(path_parts):
+            if part == "video" and i + 1 < len(path_parts) and path_parts[i + 1]:
+                return path_parts[i + 1]
+        return None
+
+    @staticmethod
+    def extract_sec_user_id(url: str) -> str | None:
+        """从 URL 中提取 sec_user_id。
+
+        支持两种格式（查询参数优先）：
+            - 查询参数：``?sec_user_id={sec_user_id}``
+            - 路径形式：``/user/{sec_user_id}``（仅当 /user/ 后紧跟单段时）
+
+        参数:
+            url: 已规范化的 URL。
+
+        返回:
+            sec_user_id 字符串；未找到返回 None。
+        """
+        try:
+            parsed = urlparse(url)
+        except ValueError:
+            return None
+        # 查询参数形式优先
+        query = parse_qs(parsed.query or "")
+        if "sec_user_id" in query and query["sec_user_id"]:
+            return query["sec_user_id"][0]
+        # 路径形式：/user/{sec_user_id}，要求 /user/ 后紧跟且仅一段
+        # 避免误匹配 /user/profile/other 这类 API 路径
+        path_parts = [p for p in (parsed.path or "").split("/") if p]
+        for i, part in enumerate(path_parts):
+            if part == "user" and i + 1 < len(path_parts):
+                next_part = path_parts[i + 1]
+                # sec_user_id 通常以 MS4w 开头且较长，API 子路径（profile/other）较短
+                # 此处保守判断：/user/ 后必须是最后一段（无更多子路径）
+                if i + 2 == len(path_parts) and next_part:
+                    return next_part
+        return None

@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from crawlers.exceptions import InvalidURLFormatError
 from crawlers.url_parser import ParsedURL, URLParser
 
 
@@ -146,3 +147,101 @@ class TestParsedURLDataclass:
         assert parsed.aweme_id is None
         assert parsed.sec_user_id == "MS4w"
         assert parsed.original_text == "原始文本"
+
+
+# ==================== identify_type 测试 ====================
+
+
+class TestIdentifyType:
+    """identify_type 方法测试。"""
+
+    def test_identify_type_video_path(self, url_parser: URLParser) -> None:
+        """路径含 /video/ → 'video'。"""
+        assert (
+            url_parser.identify_type("https://www.douyin.com/video/7646700367584954368") == "video"
+        )
+
+    def test_identify_type_video_query_param(self, url_parser: URLParser) -> None:
+        """查询参数含 aweme_id → 'video'。"""
+        url = "https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=123"
+        assert url_parser.identify_type(url) == "video"
+
+    def test_identify_type_user_home_path(self, url_parser: URLParser) -> None:
+        """路径含 /user/ → 'user_home'。"""
+        url = "https://www.douyin.com/user/MS4wLjABAAAAabc123"
+        assert url_parser.identify_type(url) == "user_home"
+
+    def test_identify_type_user_home_query_param(self, url_parser: URLParser) -> None:
+        """查询参数含 sec_user_id → 'user_home'。"""
+        url = "https://www.douyin.com/aweme/v1/web/user/profile/other/?sec_user_id=MS4w"
+        assert url_parser.identify_type(url) == "user_home"
+
+    def test_identify_type_user_home_priority_over_video(self, url_parser: URLParser) -> None:
+        """同时含 /user/ 和 /video/ 时，user_home 优先。"""
+        # 实际不会出现，但验证优先级规则
+        url = "https://www.douyin.com/user/MS4w/video/123"
+        assert url_parser.identify_type(url) == "user_home"
+
+    def test_identify_type_share_video_path(self, url_parser: URLParser) -> None:
+        """iesdouyin 分享链接 /share/video/{id} → 'video'。"""
+        url = "https://www.iesdouyin.com/share/video/7646700367584954368"
+        assert url_parser.identify_type(url) == "video"
+
+    def test_identify_type_invalid_raises(self, url_parser: URLParser) -> None:
+        """无法识别的路径 → 抛 InvalidURLFormatError。"""
+        url = "https://www.douyin.com/discover/123"
+        with pytest.raises(InvalidURLFormatError):
+            url_parser.identify_type(url)
+
+    def test_identify_type_empty_path_raises(self, url_parser: URLParser) -> None:
+        """根路径无任何标识 → 抛 InvalidURLFormatError。"""
+        url = "https://www.douyin.com/"
+        with pytest.raises(InvalidURLFormatError):
+            url_parser.identify_type(url)
+
+    def test_identify_type_invalid_url_raises(self, url_parser: URLParser) -> None:
+        """URL 格式无效 → 抛 InvalidURLFormatError。"""
+        with pytest.raises(InvalidURLFormatError):
+            url_parser.identify_type("not_a_url")
+
+
+# ==================== extract_aweme_id / extract_sec_user_id 测试 ====================
+
+
+class TestExtractIds:
+    """extract_aweme_id / extract_sec_user_id 方法测试。"""
+
+    def test_extract_aweme_id_from_path(self) -> None:
+        """从路径 /video/{id} 提取 aweme_id。"""
+        url = "https://www.douyin.com/video/7646700367584954368"
+        assert URLParser.extract_aweme_id(url) == "7646700367584954368"
+
+    def test_extract_aweme_id_from_share_path(self) -> None:
+        """从分享路径 /share/video/{id} 提取 aweme_id。"""
+        url = "https://www.iesdouyin.com/share/video/7646700367584954368"
+        assert URLParser.extract_aweme_id(url) == "7646700367584954368"
+
+    def test_extract_aweme_id_from_query(self) -> None:
+        """从查询参数 ?aweme_id=xxx 提取 aweme_id。"""
+        url = "https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=123"
+        assert URLParser.extract_aweme_id(url) == "123"
+
+    def test_extract_aweme_id_not_found(self) -> None:
+        """无 aweme_id → 返回 None。"""
+        url = "https://www.douyin.com/user/MS4w"
+        assert URLParser.extract_aweme_id(url) is None
+
+    def test_extract_sec_user_id_from_path(self) -> None:
+        """从路径 /user/{sec_uid} 提取 sec_user_id。"""
+        url = "https://www.douyin.com/user/MS4wLjABAAAAabc123"
+        assert URLParser.extract_sec_user_id(url) == "MS4wLjABAAAAabc123"
+
+    def test_extract_sec_user_id_from_query(self) -> None:
+        """从查询参数 ?sec_user_id=xxx 提取 sec_user_id。"""
+        url = "https://www.douyin.com/aweme/v1/web/user/profile/other/?sec_user_id=MS4w"
+        assert URLParser.extract_sec_user_id(url) == "MS4w"
+
+    def test_extract_sec_user_id_not_found(self) -> None:
+        """无 sec_user_id → 返回 None。"""
+        url = "https://www.douyin.com/video/123"
+        assert URLParser.extract_sec_user_id(url) is None
