@@ -32,15 +32,19 @@ target-version = ["py311"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "--cov=. --cov-report=term-missing --cov-report=html --cov-fail-under=80"
+markers = [
+    "signer: 签名算法模块测试（crawlers/signer/）",
+    "integration: 集成测试（需真实 Cookie，CI 默认跳过）",
+]
 
 [tool.coverage.run]
-source = ["app"]
+source = ["app", "crawlers"]
 omit = [
     "tests/*",
     "ui/*",
-    "crawlers/*",
     "downloader/*",
     "worker/*",
+    "crawlers/__init__.py",
 ]
 
 [tool.coverage.report]
