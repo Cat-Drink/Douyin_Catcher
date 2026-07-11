@@ -1,0 +1,111 @@
+{
+    "xbogus": [
+        {
+            "description": "minimal params",
+            "input": {
+                "url": "https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=123456&aid=6383&device_platform=webapp",
+                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            },
+            "timestamp": 1700000000,
+            "expected": "DFSzswVOV3kANy5ntmWx-VXAIQ24"
+        },
+        {
+            "description": "full params",
+            "input": {
+                "url": "https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=7234567890123456&aid=6383&device_platform=webapp&channel=channel_pc_web&version_code=170400",
+                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            },
+            "timestamp": 1700000000,
+            "expected": "DFSzswVOxFJANy5ntmWx-VXAIQ5t"
+        },
+        {
+            "description": "query only",
+            "input": {
+                "url": "aweme_id=999&aid=6383",
+                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            },
+            "timestamp": 1700000000,
+            "expected": "DFSzswVOpmxANy5ntmWx-VXAIQ2y"
+        },
+        {
+            "description": "different timestamp",
+            "input": {
+                "url": "https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=111&aid=6383",
+                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            },
+            "timestamp": 1700001000,
+            "expected": "DFSzswVO50XANy5ntmWjiVXAIQ-Z"
+        },
+        {
+            "description": "special chars",
+            "input": {
+                "url": "https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=abc%20def&aid=6383",
+                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            },
+            "timestamp": 1700000000,
+            "expected": "DFSzswVOlWtANy5ntmWx-VXAIQRb"
+        }
+    ],
+    "abogus": [
+        {
+            "description": "minimal params",
+            "input": {
+                "params": {"aweme_id": "123456", "aid": "6383"},
+                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            },
+            "timestamp_ms": 1700000000000,
+            "expected": "DfsYfqjLm2WbOl/o1XqEuIanMAw3qzb19JbTWzU68VV8"
+        },
+        {
+            "description": "full params",
+            "input": {
+                "params": {
+                    "aweme_id": "7234567890123456",
+                    "aid": "6383",
+                    "device_platform": "webapp",
+                    "channel": "channel_pc_web",
+                    "version_code": "170400"
+                },
+                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            },
+            "timestamp_ms": 1700000000000,
+            "expected": "DfsYfqjLm2WbOVSd1XwXRsIbMAw3qExw9JbTWzU6BdV8"
+        },
+        {
+            "description": "single param",
+            "input": {
+                "params": {"aweme_id": "999"},
+                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            },
+            "timestamp_ms": 1700000000000,
+            "expected": "DfsYfqjLm2WbOIeS1XqNMrOcMAw3qixl9JbTWzU6/xV8"
+        },
+        {
+            "description": "different timestamp",
+            "input": {
+                "params": {"aweme_id": "111", "aid": "6383"},
+                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            },
+            "timestamp_ms": 1700001000000,
+            "expected": "D6BODqjLm2WbO4gP1XoivpyWMAw3qYOA9jeP8zU6KnV8"
+        },
+        {
+            "description": "many params",
+            "input": {
+                "params": {
+                    "aweme_id": "456",
+                    "aid": "6383",
+                    "device_platform": "webapp",
+                    "channel": "channel_pc_web",
+                    "version_code": "170400",
+                    "cookie_enabled": "true",
+                    "screen_width": "1920",
+                    "screen_height": "1080"
+                },
+                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            },
+            "timestamp_ms": 1700000000000,
+            "expected": "DfsYfqjLm2WbOW6W1XoAAaVXMAw3qP/C9JbTWzU67xV8"
+        }
+    ]
+}
