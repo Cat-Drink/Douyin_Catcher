@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -19,6 +21,14 @@ from app.repositories import (
     TaskItemRepository,
     TaskRepository,
 )
+from crawlers.signer import DEFAULT_USER_AGENT
+from crawlers.signer.abogus import ABogusSigner
+from crawlers.signer.mstoken import MsTokenGenerator
+from crawlers.signer.verify_fp import VerifyFpGenerator
+from crawlers.signer.xbogus import XBogusSigner
+
+# 测试数据文件路径
+_VECTORS_PATH = Path(__file__).parent / "data" / "known_signer_vectors.json"
 
 
 @pytest.fixture
@@ -99,3 +109,43 @@ def sample_task_item(sample_task: Task, task_repo: TaskRepository) -> TaskItem:
         fail_reason=None,
         local_path=None,
     )
+
+
+# ---- 签名算法测试 fixtures ----
+
+
+@pytest.fixture
+def default_user_agent() -> str:
+    """返回与 Signer.DEFAULT_USER_AGENT 一致的 UA 字符串。"""
+    return DEFAULT_USER_AGENT
+
+
+@pytest.fixture
+def known_vectors() -> dict:
+    """加载 known_signer_vectors.json 中的已知输入/输出对。"""
+    with open(_VECTORS_PATH, encoding="utf-8") as f:
+        return json.load(f)
+
+
+@pytest.fixture
+def xbogus_signer() -> XBogusSigner:
+    """返回固定时间戳的 XBogusSigner（确保确定性输出）。"""
+    return XBogusSigner(timestamp=1700000000)
+
+
+@pytest.fixture
+def abogus_signer() -> ABogusSigner:
+    """返回固定时间戳的 ABogusSigner（确保确定性输出）。"""
+    return ABogusSigner(timestamp_ms=1700000000000)
+
+
+@pytest.fixture
+def mstoken_generator() -> MsTokenGenerator:
+    """返回 MsTokenGenerator 实例。"""
+    return MsTokenGenerator()
+
+
+@pytest.fixture
+def verify_fp_generator() -> VerifyFpGenerator:
+    """返回 VerifyFpGenerator 实例。"""
+    return VerifyFpGenerator()
