@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
+import respx
 
 from app.models import Cookie
 from app.repositories import CookieRepository
@@ -591,3 +592,279 @@ class TestHandleResponse:
         # 非 text/html，不检测验证特征，按正常 200 返回
         result = client._handle_response(resp, None)
         assert result is resp
+
+
+# ==================== get 异步方法测试 ====================
+
+_TEST_URL = "https://www.douyin.com/aweme/v1/web/aweme/detail/"
+
+
+class TestHttpGet:
+    """get 异步方法测试：签名/Cookie 注入、风控响应、自动切换。"""
+
+    @respx.mock
+    async def test_get_injects_signature(
+        self,
+        sample_cookies: list[Cookie],
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """验证 signer.sign 被调用且签名参数追加到请求 query。"""
+        respx.get(_TEST_URL).mock(
+            return_value=httpx.Response(200, json={"status_code": 0, "data": "ok"})
+        )
+        client = HttpClient(cookie_repo, stub_signer)
+        await client.get(_TEST_URL, {"aweme_id": "123"})
+        # StubSigner 记录了调用参数
+        assert stub_signer.call_count == 1
+        assert stub_signer.last_url == _TEST_URL
+        assert stub_signer.last_params == {"aweme_id": "123"}
+        # 验证签名参数出现在请求 URL query 中
+        request = respx.calls[0].request
+        assert "X-Bogus" in request.url.params
+        assert "a_bogus" in request.url.params
+        assert "msToken" in request.url.params
+
+    @respx.mock
+    async def test_get_injects_cookie_from_pool(
+        self,
+        sample_cookies: list[Cookie],
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """use_cookie_pool=True → Cookie 头存在且为池中 Cookie 内容。"""
+        respx.get(_TEST_URL).mock(return_value=httpx.Response(200, json={"status_code": 0}))
+        client = HttpClient(cookie_repo, stub_signer)
+        await client.get(_TEST_URL, {"aweme_id": "123"})
+        request = respx.calls[0].request
+        # sample_cookies[0] 是最久未用的，应被取用
+        assert request.headers["cookie"] == sample_cookies[0].content
+
+    @respx.mock
+    async def test_get_with_explicit_cookie(
+        self,
+        sample_cookies: list[Cookie],
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """cookie= 显式指定 → 不调用池，Cookie 头为指定值。"""
+        respx.get(_TEST_URL).mock(return_value=httpx.Response(200, json={"status_code": 0}))
+        client = HttpClient(cookie_repo, stub_signer)
+        explicit_cookie = "ttwid=explicit; msToken=explicit"
+        await client.get(_TEST_URL, {"aweme_id": "123"}, cookie=explicit_cookie)
+        request = respx.calls[0].request
+        assert request.headers["cookie"] == explicit_cookie
+
+    @respx.mock
+    async def test_get_without_cookie(
+        self,
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """use_cookie_pool=False, cookie=None → 不带 Cookie 头（短链重定向场景）。"""
+        respx.get(_TEST_URL).mock(return_value=httpx.Response(200, json={"status_code": 0}))
+        client = HttpClient(cookie_repo, stub_signer)
+        await client.get(_TEST_URL, {"aweme_id": "123"}, use_cookie_pool=False)
+        request = respx.calls[0].request
+        assert "cookie" not in request.headers
+
+    @respx.mock
+    async def test_get_success_reports_cookie_success(
+        self,
+        sample_cookies: list[Cookie],
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """200 + status_code=0 → 调用 report_cookie_success，fail_count 重置。"""
+        respx.get(_TEST_URL).mock(return_value=httpx.Response(200, json={"status_code": 0}))
+        client = HttpClient(cookie_repo, stub_signer)
+        # 先把 fail_count 设为 1
+        cookie_repo.update_fail_count(sample_cookies[0].id, 1)
+        await client.get(_TEST_URL, {"aweme_id": "123"})
+        updated = cookie_repo.get_by_id(sample_cookies[0].id)
+        assert updated is not None
+        assert updated.fail_count == 0
+
+    @respx.mock
+    async def test_get_461_triggers_auto_switch(
+        self,
+        sample_cookies: list[Cookie],
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """首条 Cookie 461 失效 → 自动取下一条重试成功。"""
+        # 第一次返回 461，第二次返回 200
+        route = respx.get(_TEST_URL)
+        route.mock(
+            side_effect=[
+                httpx.Response(461, text="blocked", headers={"content-type": "text/html"}),
+                httpx.Response(200, json={"status_code": 0}),
+            ]
+        )
+        client = HttpClient(cookie_repo, stub_signer)
+        response = await client.get(_TEST_URL, {"aweme_id": "123"})
+        assert response.status_code == 200
+        # 应该有两次请求
+        assert len(respx.calls) == 2
+        # 第一次用 sample_cookies[0]，第二次用 sample_cookies[1]
+        assert respx.calls[0].request.headers["cookie"] == sample_cookies[0].content
+        assert respx.calls[1].request.headers["cookie"] == sample_cookies[1].content
+        # 首条 Cookie fail_count += 1
+        first = cookie_repo.get_by_id(sample_cookies[0].id)
+        assert first is not None
+        assert first.fail_count == 1
+
+    @respx.mock
+    async def test_get_all_cookies_invalid_raises(
+        self,
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """池中无 valid Cookie → 抛 CookieInvalidError。"""
+        respx.get(_TEST_URL).mock(return_value=httpx.Response(200, json={"status_code": 0}))
+        client = HttpClient(cookie_repo, stub_signer)
+        with pytest.raises(CookieInvalidError, match="无可用"):
+            await client.get(_TEST_URL, {"aweme_id": "123"})
+
+    @respx.mock
+    async def test_get_461_no_pool_no_retry(
+        self,
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """use_cookie_pool=False 时 461 不触发自动切换，直接抛异常。"""
+        respx.get(_TEST_URL).mock(
+            return_value=httpx.Response(461, text="blocked", headers={"content-type": "text/html"})
+        )
+        client = HttpClient(cookie_repo, stub_signer)
+        with pytest.raises(CookieInvalidError):
+            await client.get(_TEST_URL, {"aweme_id": "123"}, use_cookie_pool=False)
+        # 仅一次请求，无重试
+        assert len(respx.calls) == 1
+
+    @respx.mock
+    async def test_get_network_exception_raises_network_error(
+        self,
+        sample_cookies: list[Cookie],
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """httpx.ConnectError → 抛 NetworkError。"""
+        respx.get(_TEST_URL).mock(side_effect=httpx.ConnectError("connection refused"))
+        client = HttpClient(cookie_repo, stub_signer)
+        with pytest.raises(NetworkError):
+            await client.get(_TEST_URL, {"aweme_id": "123"})
+
+    @respx.mock
+    async def test_get_default_headers_present(
+        self,
+        sample_cookies: list[Cookie],
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """验证 User-Agent / Referer / Accept 头存在。"""
+        respx.get(_TEST_URL).mock(return_value=httpx.Response(200, json={"status_code": 0}))
+        client = HttpClient(cookie_repo, stub_signer)
+        await client.get(_TEST_URL, {"aweme_id": "123"})
+        request = respx.calls[0].request
+        assert "User-Agent" in request.headers
+        assert request.headers["referer"] == "https://www.douyin.com/"
+        assert "accept" in request.headers
+
+    @respx.mock
+    async def test_get_429_raises_rate_limited(
+        self,
+        sample_cookies: list[Cookie],
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """429 → 抛 RateLimitedError，不触发自动切换（仅 461/412 才切换）。"""
+        respx.get(_TEST_URL).mock(
+            return_value=httpx.Response(
+                429, text="rate limited", headers={"content-type": "text/plain"}
+            )
+        )
+        client = HttpClient(cookie_repo, stub_signer)
+        with pytest.raises(RateLimitedError):
+            await client.get(_TEST_URL, {"aweme_id": "123"})
+        # 仅一次请求，429 不触发自动切换
+        assert len(respx.calls) == 1
+
+    @respx.mock
+    async def test_get_verify_html_raises_verify_required(
+        self,
+        sample_cookies: list[Cookie],
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """200 + 验证 HTML → 抛 VerifyRequiredError。"""
+        respx.get(_TEST_URL).mock(
+            return_value=httpx.Response(
+                200,
+                text="<html>captcha_verify</html>",
+                headers={"content-type": "text/html"},
+            )
+        )
+        client = HttpClient(cookie_repo, stub_signer)
+        with pytest.raises(VerifyRequiredError):
+            await client.get(_TEST_URL, {"aweme_id": "123"})
+
+    @respx.mock
+    async def test_get_status_code_nonzero_returns_response(
+        self,
+        sample_cookies: list[Cookie],
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """200 + status_code 非 0 → 返回 response（不抛异常）。"""
+        respx.get(_TEST_URL).mock(
+            return_value=httpx.Response(200, json={"status_code": 4000, "message": "gone"})
+        )
+        client = HttpClient(cookie_repo, stub_signer)
+        response = await client.get(_TEST_URL, {"aweme_id": "123"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status_code"] == 4000
+
+    @respx.mock
+    async def test_get_500_raises_network_error(
+        self,
+        sample_cookies: list[Cookie],
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """500 → 抛 NetworkError。"""
+        respx.get(_TEST_URL).mock(
+            return_value=httpx.Response(
+                500, text="server error", headers={"content-type": "text/plain"}
+            )
+        )
+        client = HttpClient(cookie_repo, stub_signer)
+        with pytest.raises(NetworkError):
+            await client.get(_TEST_URL, {"aweme_id": "123"})
+
+    @respx.mock
+    async def test_get_auto_switch_exhausted_raises(
+        self,
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """首条 Cookie 461 失效，池中仅 1 条 valid → 自动切换无第二条 → 抛 CookieInvalidError。"""
+        cookie_repo.add(
+            Cookie(
+                id=None,
+                content="only_valid",
+                label=None,
+                status="valid",
+                last_used=None,
+                last_check=None,
+                fail_count=0,
+                created_at="2026-07-11",
+            )
+        )
+        respx.get(_TEST_URL).mock(
+            return_value=httpx.Response(461, text="blocked", headers={"content-type": "text/html"})
+        )
+        client = HttpClient(cookie_repo, stub_signer)
+        with pytest.raises(CookieInvalidError):
+            await client.get(_TEST_URL, {"aweme_id": "123"})

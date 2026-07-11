@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+import httpx
+
 from app.logger import get_logger
 from app.models import Cookie, now_iso
 from crawlers.exceptions import (
@@ -22,8 +24,6 @@ from crawlers.exceptions import (
 from crawlers.signer import DEFAULT_USER_AGENT
 
 if TYPE_CHECKING:
-    import httpx
-
     from app.repositories import CookieRepository
     from crawlers.signer import Signer
 
@@ -132,9 +132,7 @@ class HttpClient:
             timeout_connect: 连接超时（秒），默认 10.0。
             timeout_read: 读取超时（秒），默认 30.0。
         """
-        # 延迟导入 httpx，避免模块导入期触发网络栈初始化
-        import httpx
-
+        # httpx 已在模块顶部导入
         self._cookie_repository = cookie_repository
         self._signer = signer
         self._client = httpx.AsyncClient(
@@ -155,6 +153,102 @@ class HttpClient:
         调用时机：应用退出时（AsyncWorker.stop）。
         """
         await self._client.aclose()
+
+    # === 请求入口 ===
+
+    async def get(
+        self,
+        url: str,
+        params: dict | None = None,
+        use_cookie_pool: bool = True,
+        cookie: str | None = None,
+    ) -> httpx.Response:
+        """发起 GET 请求，自动注入签名、Cookie、统一 Headers。
+
+        参数:
+            url: 请求 URL（不含查询参数）。
+            params: 业务请求参数；本方法会自动追加签名参数。
+            use_cookie_pool: 是否从 Cookie 池自动取 Cookie（默认 True）。
+            cookie: 显式指定 Cookie（优先级高于池）。
+
+        返回:
+            httpx.Response。
+
+        异常:
+            CookieInvalidError: 池中所有 Cookie 均失效或 461/412 响应。
+            RateLimitedError: HTTP 429 限流响应。
+            VerifyRequiredError: 响应含滑动验证 HTML。
+            NetworkError: 网络异常或 5xx 响应。
+        """
+        # 步骤 1：签名注入
+        sign_params = self._signer.sign(url, params or {})
+        full_params = {**(params or {}), **sign_params}
+
+        # 步骤 2：确定 Cookie 来源
+        cookie_record: CookieRecord | None = None
+        cookie_str: str | None = None
+        if cookie is not None:
+            # 显式指定 Cookie 优先
+            cookie_str = cookie
+        elif use_cookie_pool:
+            # 从池取 Cookie
+            cookie_record = self.get_cookie_from_pool()
+            cookie_str = cookie_record.content
+
+        # 步骤 3：构造请求 headers
+        headers = dict(DEFAULT_HEADERS)
+        if cookie_str is not None:
+            headers["Cookie"] = cookie_str
+
+        # 步骤 4：发起请求（含 Cookie 自动切换重试）
+        cookie_id = cookie_record.id if cookie_record is not None else None
+        try:
+            response = await self._client.get(url, params=full_params, headers=headers)
+        except httpx.HTTPError as e:
+            logger.error("网络异常: url=%s error=%s", url, type(e).__name__)
+            raise NetworkError(f"网络请求失败: {e}") from e
+
+        try:
+            return self._handle_response(response, cookie_id)
+        except CookieInvalidError:
+            # 仅在 461/412 且使用 Cookie 池时尝试切换一次
+            if not use_cookie_pool or cookie is not None:
+                raise
+            return await self._retry_with_next_cookie(url, full_params, headers)
+
+    async def _retry_with_next_cookie(
+        self,
+        url: str,
+        full_params: dict,
+        headers: dict[str, str],
+    ) -> httpx.Response:
+        """Cookie 失效后从池中取下一条 Cookie 重试一次。
+
+        参数:
+            url: 请求 URL。
+            full_params: 含签名的完整参数。
+            headers: 基础请求头（不含 Cookie）。
+
+        返回:
+            httpx.Response。
+
+        异常:
+            CookieInvalidError: 池中已无可用 Cookie 或重试仍失败。
+            RateLimitedError / VerifyRequiredError / NetworkError: 重试响应的其他异常。
+        """
+        try:
+            next_record = self.get_cookie_from_pool()
+        except CookieInvalidError:
+            # 池中已无可用 Cookie
+            raise
+        logger.info("Cookie 自动切换，重试使用 Cookie id=%s", next_record.id)
+        retry_headers = {**headers, "Cookie": next_record.content}
+        try:
+            response = await self._client.get(url, params=full_params, headers=retry_headers)
+        except httpx.HTTPError as e:
+            logger.error("重试网络异常: url=%s error=%s", url, type(e).__name__)
+            raise NetworkError(f"网络请求失败: {e}") from e
+        return self._handle_response(response, next_record.id)
 
     # === Cookie 池管理 ===
 
