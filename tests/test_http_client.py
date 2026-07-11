@@ -10,14 +10,18 @@ from __future__ import annotations
 import pytest
 
 from app.models import Cookie
+from app.repositories import CookieRepository
+from crawlers.exceptions import CookieInvalidError
 from crawlers.http_client import (
     DEFAULT_HEADERS,
     MAX_FAIL_COUNT,
     RISK_STATUS_CODES,
     VERIFY_HTML_MARKERS,
     CookieRecord,
+    HttpClient,
     _cookie_to_record,
 )
+from tests.conftest import StubSigner
 
 # ==================== 模块常量测试 ====================
 
@@ -157,3 +161,229 @@ class TestCookieToRecord:
         assert record.last_check == cookie.last_check
         assert record.fail_count == cookie.fail_count
         assert record.created_at == cookie.created_at
+
+
+# ==================== Cookie 池管理测试 ====================
+
+
+class TestCookiePoolManagement:
+    """Cookie 池管理方法测试：get_cookie_from_pool / report_* / check_all_*。"""
+
+    def test_get_cookie_from_pool_single(
+        self,
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """单 Cookie 池 → 返回该 Cookie，更新 last_used。"""
+        cookie_repo.add(
+            Cookie(
+                id=None,
+                content="ttwid=single",
+                label=None,
+                status="valid",
+                last_used=None,
+                last_check=None,
+                fail_count=0,
+                created_at="2026-07-11",
+            )
+        )
+        client = HttpClient(cookie_repo, stub_signer)
+        record = client.get_cookie_from_pool()
+        assert record.content == "ttwid=single"
+        assert record.status == "valid"
+        # last_used 应被更新（非 None）
+        updated = cookie_repo.get_by_id(record.id)
+        assert updated is not None
+        assert updated.last_used is not None
+
+    def test_get_cookie_from_pool_multi_round_robin(
+        self,
+        sample_cookies: list[Cookie],
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """多 Cookie 池 → 按 last_used 升序取最久未用。"""
+        client = HttpClient(cookie_repo, stub_signer)
+        # sample_cookies[0] last_used=08:00 比 [1] last_used=10:00 更早
+        record = client.get_cookie_from_pool()
+        assert record.id == sample_cookies[0].id
+        # 第二次取：[0] 的 last_used 刚被更新为 now，此时 [1] 的 10:00 更早
+        record2 = client.get_cookie_from_pool()
+        assert record2.id == sample_cookies[1].id
+
+    def test_get_cookie_from_pool_empty_raises(
+        self,
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """池空 → 抛 CookieInvalidError。"""
+        client = HttpClient(cookie_repo, stub_signer)
+        with pytest.raises(CookieInvalidError, match="无可用"):
+            client.get_cookie_from_pool()
+
+    def test_get_cookie_from_pool_skips_invalid_and_untested(
+        self,
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """池中仅 invalid 与 untested → 抛 CookieInvalidError（get_valid 仅返回 valid）。"""
+        cookie_repo.add(
+            Cookie(
+                id=None,
+                content="invalid_one",
+                label=None,
+                status="invalid",
+                last_used=None,
+                last_check=None,
+                fail_count=3,
+                created_at="2026-07-11",
+            )
+        )
+        cookie_repo.add(
+            Cookie(
+                id=None,
+                content="untested_one",
+                label=None,
+                status="untested",
+                last_used=None,
+                last_check=None,
+                fail_count=0,
+                created_at="2026-07-11",
+            )
+        )
+        client = HttpClient(cookie_repo, stub_signer)
+        with pytest.raises(CookieInvalidError):
+            client.get_cookie_from_pool()
+
+    def test_report_cookie_fail_below_threshold(
+        self,
+        sample_cookies: list[Cookie],
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """fail_count 从 0→1，状态仍 valid。"""
+        client = HttpClient(cookie_repo, stub_signer)
+        # sample_cookies[0] fail_count=0
+        client.report_cookie_fail(sample_cookies[0].id)
+        updated = cookie_repo.get_by_id(sample_cookies[0].id)
+        assert updated is not None
+        assert updated.fail_count == 1
+        assert updated.status == "valid"
+
+    def test_report_cookie_fail_at_threshold(
+        self,
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """fail_count 从 2→3，状态置 invalid。"""
+        cookie_id = cookie_repo.add(
+            Cookie(
+                id=None,
+                content="about_to_fail",
+                label=None,
+                status="valid",
+                last_used=None,
+                last_check=None,
+                fail_count=2,
+                created_at="2026-07-11",
+            )
+        )
+        client = HttpClient(cookie_repo, stub_signer)
+        client.report_cookie_fail(cookie_id)
+        updated = cookie_repo.get_by_id(cookie_id)
+        assert updated is not None
+        assert updated.fail_count == 3
+        assert updated.status == "invalid"
+
+    def test_report_cookie_fail_nonexistent_id_no_raise(
+        self,
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """不存在的 cookie_id 不抛异常，仅记日志。"""
+        client = HttpClient(cookie_repo, stub_signer)
+        # 不应抛异常
+        client.report_cookie_fail(99999)
+
+    def test_report_cookie_success_resets_fail_count(
+        self,
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """成功上报重置 fail_count = 0，更新 last_used。"""
+        cookie_id = cookie_repo.add(
+            Cookie(
+                id=None,
+                content="has_failures",
+                label=None,
+                status="valid",
+                last_used=None,
+                last_check=None,
+                fail_count=2,
+                created_at="2026-07-11",
+            )
+        )
+        client = HttpClient(cookie_repo, stub_signer)
+        client.report_cookie_success(cookie_id)
+        updated = cookie_repo.get_by_id(cookie_id)
+        assert updated is not None
+        assert updated.fail_count == 0
+        assert updated.last_used is not None
+
+    def test_check_all_cookies_invalid_true_when_no_valid(
+        self,
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """全部 invalid → True。"""
+        cookie_repo.add(
+            Cookie(
+                id=None,
+                content="invalid_one",
+                label=None,
+                status="invalid",
+                last_used=None,
+                last_check=None,
+                fail_count=3,
+                created_at="2026-07-11",
+            )
+        )
+        client = HttpClient(cookie_repo, stub_signer)
+        assert client.check_all_cookies_invalid() is True
+
+    def test_check_all_cookies_invalid_false_when_has_valid(
+        self,
+        sample_cookies: list[Cookie],
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """有 valid → False。"""
+        client = HttpClient(cookie_repo, stub_signer)
+        assert client.check_all_cookies_invalid() is False
+
+    def test_check_all_cookies_invalid_true_when_empty(
+        self,
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """空池 → True。"""
+        client = HttpClient(cookie_repo, stub_signer)
+        assert client.check_all_cookies_invalid() is True
+
+    def test_cookie_fail_then_success_resets(
+        self,
+        sample_cookies: list[Cookie],
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """失败 2 次后成功 → fail_count 归 0，下次失败从 1 开始。"""
+        client = HttpClient(cookie_repo, stub_signer)
+        cid = sample_cookies[0].id  # fail_count=0
+        client.report_cookie_fail(cid)  # → 1
+        client.report_cookie_fail(cid)  # → 2
+        client.report_cookie_success(cid)  # → 0
+        client.report_cookie_fail(cid)  # → 1
+        updated = cookie_repo.get_by_id(cid)
+        assert updated is not None
+        assert updated.fail_count == 1
+        assert updated.status == "valid"

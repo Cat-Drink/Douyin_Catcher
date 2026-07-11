@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from app import database
-from app.models import Task, TaskItem
+from app.models import Cookie, Task, TaskItem
 from app.repositories import (
     ConfigRepository,
     CookieRepository,
@@ -149,3 +149,95 @@ def mstoken_generator() -> MsTokenGenerator:
 def verify_fp_generator() -> VerifyFpGenerator:
     """返回 VerifyFpGenerator 实例。"""
     return VerifyFpGenerator()
+
+
+# ---- HttpClient / Cookie 池测试 fixtures ----
+
+
+class StubSigner:
+    """签名 stub，返回固定签名 dict，供 HttpClient 测试使用。
+
+    不调用真实签名算法，避免测试受签名算法变更影响。
+    记录最后一次 sign 调用的参数，便于断言。
+    """
+
+    def __init__(self) -> None:
+        self.last_url: str | None = None
+        self.last_params: dict | None = None
+        self.call_count: int = 0
+
+    def sign(self, url: str, params: dict, user_agent: str | None = None) -> dict:
+        """返回固定签名 dict，记录调用参数。"""
+        self.last_url = url
+        self.last_params = dict(params)
+        self.call_count += 1
+        return {
+            "X-Bogus": "stub_xbogus_28chars________",
+            "a_bogus": "stub_abogus_44chars_______________",
+            "msToken": "stub_mstoken_172chars" + "x" * 150,
+            "verifyFp": "verify_stub_" + "y" * 40,
+        }
+
+
+@pytest.fixture
+def stub_signer() -> StubSigner:
+    """返回 StubSigner 实例。"""
+    return StubSigner()
+
+
+@pytest.fixture
+def sample_cookies(memory_db: sqlite3.Connection, cookie_repo: CookieRepository) -> list[Cookie]:
+    """插入一组测试用 Cookie 并返回（含 valid/invalid/untested 三种状态）。
+
+    - Cookie 1: valid, fail_count=0, last_used 较早
+    - Cookie 2: valid, fail_count=1, last_used 较晚
+    - Cookie 3: invalid, fail_count=3
+    - Cookie 4: untested, fail_count=0
+    """
+    cookies = [
+        Cookie(
+            id=None,
+            content="ttwid=fake_c1; msToken=fake_m1",
+            label="账号A",
+            status="valid",
+            last_used="2026-07-11T08:00:00",
+            last_check=None,
+            fail_count=0,
+            created_at="2026-07-11T07:00:00",
+        ),
+        Cookie(
+            id=None,
+            content="ttwid=fake_c2; msToken=fake_m2",
+            label="账号B",
+            status="valid",
+            last_used="2026-07-11T10:00:00",
+            last_check=None,
+            fail_count=1,
+            created_at="2026-07-11T07:00:00",
+        ),
+        Cookie(
+            id=None,
+            content="ttwid=fake_c3; msToken=fake_m3",
+            label="账号C",
+            status="invalid",
+            last_used=None,
+            last_check=None,
+            fail_count=3,
+            created_at="2026-07-11T07:00:00",
+        ),
+        Cookie(
+            id=None,
+            content="ttwid=fake_c4; msToken=fake_m4",
+            label=None,
+            status="untested",
+            last_used=None,
+            last_check=None,
+            fail_count=0,
+            created_at="2026-07-11T07:00:00",
+        ),
+    ]
+    inserted: list[Cookie] = []
+    for cookie in cookies:
+        cookie_id = cookie_repo.add(cookie)
+        inserted.append(cookie_repo.get_by_id(cookie_id))  # type: ignore[arg-type]
+    return inserted

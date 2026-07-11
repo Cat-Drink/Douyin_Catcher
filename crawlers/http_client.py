@@ -12,7 +12,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from app.logger import get_logger
-from app.models import Cookie
+from app.models import Cookie, now_iso
+from crawlers.exceptions import CookieInvalidError
 from crawlers.signer import DEFAULT_USER_AGENT
 
 if TYPE_CHECKING:
@@ -147,3 +148,77 @@ class HttpClient:
         调用时机：应用退出时（AsyncWorker.stop）。
         """
         await self._client.aclose()
+
+    # === Cookie 池管理 ===
+
+    def get_cookie_from_pool(self) -> CookieRecord:
+        """从 Cookie 池中按"最久未用优先"策略取一条 valid Cookie。
+
+        策略:
+            - 仅取 ``status='valid'`` 的记录
+            - 按 ``last_used`` 升序，取最早使用的一条（由 CookieRepository.get_valid 实现）
+            - 取到后立即更新 ``last_used`` 为当前时间
+
+        返回:
+            CookieRecord 实例。
+
+        异常:
+            CookieInvalidError: 池中无可用 Cookie（全部 invalid 或池空）。
+        """
+        cookie = self._cookie_repository.get_valid()
+        if cookie is None:
+            raise CookieInvalidError("Cookie 池无可用 Cookie")
+        # 更新 last_used，标记为刚刚使用
+        self._cookie_repository.update_last_used(cookie.id, now_iso())
+        logger.debug("从 Cookie 池取用 Cookie id=%s label=%s", cookie.id, cookie.label)
+        return _cookie_to_record(cookie)
+
+    def report_cookie_fail(self, cookie_id: int) -> None:
+        """上报某条 Cookie 请求失败。
+
+        策略:
+            - 该 Cookie ``fail_count += 1``
+            - 若 ``fail_count >= MAX_FAIL_COUNT``，置 ``status='invalid'``
+
+        参数:
+            cookie_id: 失败的 Cookie 记录 ID。
+        """
+        cookie = self._cookie_repository.get_by_id(cookie_id)
+        if cookie is None:
+            logger.warning("上报 Cookie 失败：id=%s 不存在", cookie_id)
+            return
+        new_fail_count = cookie.fail_count + 1
+        self._cookie_repository.update_fail_count(cookie_id, new_fail_count)
+        if new_fail_count >= MAX_FAIL_COUNT:
+            self._cookie_repository.update_status(cookie_id, "invalid")
+            logger.warning(
+                "Cookie id=%s 连续失败 %d 次，标记为 invalid",
+                cookie_id,
+                new_fail_count,
+            )
+        else:
+            logger.debug(
+                "Cookie id=%s 失败计数 %d/%d",
+                cookie_id,
+                new_fail_count,
+                MAX_FAIL_COUNT,
+            )
+
+    def report_cookie_success(self, cookie_id: int) -> None:
+        """上报某条 Cookie 请求成功，重置 fail_count。
+
+        参数:
+            cookie_id: 成功的 Cookie 记录 ID。
+        """
+        self._cookie_repository.update_fail_count(cookie_id, 0)
+        self._cookie_repository.update_last_used(cookie_id, now_iso())
+        logger.debug("Cookie id=%s 请求成功，fail_count 已重置", cookie_id)
+
+    def check_all_cookies_invalid(self) -> bool:
+        """检查池里是否所有 Cookie 都失效（无 valid 记录）。
+
+        返回:
+            池中无 valid Cookie 返回 True，否则 False。
+        """
+        cookie = self._cookie_repository.get_valid()
+        return cookie is None
