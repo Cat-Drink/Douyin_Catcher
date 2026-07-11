@@ -159,14 +159,17 @@ class TestSignerUserAgent:
 class TestSignerErrorPropagation:
     """异常传播测试。"""
 
-    def test_empty_params_raises_sign_error(self) -> None:
-        """空参数字典抛出 SignError。"""
+    def test_empty_params_succeeds(self) -> None:
+        """空参数字典不报错：msToken 会自动加入 params，保证非空。"""
         signer = Signer()
-        with pytest.raises(SignError):
-            signer.sign(
-                "https://www.douyin.com/aweme/v1/web/aweme/detail/",
-                {},
-            )
+        result = signer.sign(
+            "https://www.douyin.com/aweme/v1/web/aweme/detail/",
+            {},
+        )
+        # 空参数也能生成完整四键签名（msToken 自动填充）
+        assert set(result.keys()) == {"X-Bogus", "a_bogus", "msToken", "verifyFp"}
+        for value in result.values():
+            assert value
 
     def test_empty_ua_raises_sign_error(self) -> None:
         """空 UA（构造函数传入空字符串）抛出 SignError。"""
@@ -177,13 +180,13 @@ class TestSignerErrorPropagation:
                 {"aweme_id": "123", "aid": "6383"},
             )
 
-    def test_sign_error_contains_algorithm(self) -> None:
-        """子算法失败时 SignError 含 algorithm 标识。"""
+    def test_none_params_raises_sign_error(self) -> None:
+        """None 参数字典抛出 SignError（类型错误被包装）。"""
         signer = Signer()
         with pytest.raises(SignError) as exc_info:
             signer.sign(
                 "https://www.douyin.com/aweme/v1/web/aweme/detail/",
-                {},
+                None,  # type: ignore[arg-type]
             )
-        # 空参数由 ABogusSigner 检测，algorithm 应为 'abogus'
-        assert exc_info.value.algorithm == "abogus"
+        # 通用包装错误，algorithm 为默认值 None
+        assert exc_info.value.algorithm is None

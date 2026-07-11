@@ -7,7 +7,7 @@
                 "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             },
             "timestamp": 1700000000,
-            "expected": "DFSzswVOV3kANy5ntmWx-VXAIQ24"
+            "expected": "DFSzswVYV3kANG//tmWx-e9WX7n3"
         },
         {
             "description": "full params",
@@ -16,7 +16,7 @@
                 "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             },
             "timestamp": 1700000000,
-            "expected": "DFSzswVOxFJANy5ntmWx-VXAIQ5t"
+            "expected": "DFSzswVYxFJANG//tmWx-e9WX7JY"
         },
         {
             "description": "query only",
@@ -25,7 +25,7 @@
                 "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             },
             "timestamp": 1700000000,
-            "expected": "DFSzswVOpmxANy5ntmWx-VXAIQ2y"
+            "expected": "DFSzswVYpmxANG//tmWx-e9WX7ni"
         },
         {
             "description": "different timestamp",
@@ -34,7 +34,7 @@
                 "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             },
             "timestamp": 1700001000,
-            "expected": "DFSzswVO50XANy5ntmWjiVXAIQ-Z"
+            "expected": "DFSzswVY50XANG//tmWjie9WX7jw"
         },
         {
             "description": "special chars",
@@ -43,14 +43,17 @@
                 "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             },
             "timestamp": 1700000000,
-            "expected": "DFSzswVOlWtANy5ntmWx-VXAIQRb"
+            "expected": "DFSzswVYifvANG//tmWx-e9WX7rp"
         }
     ],
     "abogus": [
         {
             "description": "minimal params",
             "input": {
-                "params": {"aweme_id": "123456", "aid": "6383"},
+                "params": {
+                    "aweme_id": "123456",
+                    "aid": "6383"
+                },
                 "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             },
             "timestamp_ms": 1700000000000,
@@ -74,7 +77,9 @@
         {
             "description": "single param",
             "input": {
-                "params": {"aweme_id": "999"},
+                "params": {
+                    "aweme_id": "999"
+                },
                 "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             },
             "timestamp_ms": 1700000000000,
@@ -83,7 +88,10 @@
         {
             "description": "different timestamp",
             "input": {
-                "params": {"aweme_id": "111", "aid": "6383"},
+                "params": {
+                    "aweme_id": "111",
+                    "aid": "6383"
+                },
                 "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             },
             "timestamp_ms": 1700001000000,
