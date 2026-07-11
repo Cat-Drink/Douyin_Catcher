@@ -25,7 +25,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import time
-import urllib.parse
 
 from crawlers.exceptions import SignError
 
@@ -34,16 +33,16 @@ from crawlers.exceptions import SignError
 _BOGUS_BASE64_TABLE: str = "Dkdpgh4ZKsQB80/Mfvw36XI1R25-WUAlEi7NLboqYTOPuzmFjJnryx9HVGcaStCe="
 
 # canvas 指纹固定值（抖音前端固定常量）
-_CANVAS_CODE: int = 1489154074
+_CANVAS_CODE: int = 536919696
 
 # RC4 流密码密钥
-# UA 处理用的密钥：对应抖音前端固定字节 [0x00, 0x01, 0x0E]
-_UA_RC4_KEY: bytes = bytes([0, 1, 14])
+# UA 处理用的密钥：对应抖音前端固定字节 [0x00, 0x01, 0x0C]
+_UA_RC4_KEY: bytes = bytes([0, 1, 12])
 # 混淆串处理用的密钥：对应抖音前端固定字节 [0xFF]
 _GARBLE_RC4_KEY: bytes = bytes([255])
 
 # arr1 固定头部字节（抖音前端固定常量）
-_ARR1_HEADER: tuple[int, ...] = (64, 0, 1, 14)
+_ARR1_HEADER: tuple[int, ...] = (64, 0, 1, 12)
 
 # arr1 校验位固定值（异或校验的初始值）
 _ARR1_CHECKSUM_INIT: int = 64
@@ -115,7 +114,7 @@ def _build_operation_array(payload: str, form: str, user_agent: str, timestamp: 
     salt_form = _double_md5(form.encode("utf-8"))
 
     # User-Agent 经 RC4 加密后再 base64 编码，最后取 MD5
-    ua_encrypted = _rc4(_UA_RC4_KEY, user_agent.encode("utf-8"))
+    ua_encrypted = _rc4(_UA_RC4_KEY, user_agent.encode("ISO-8859-1"))
     salt_ua = hashlib.md5(base64.b64encode(ua_encrypted)).digest()
 
     # arr1: 19 字节（4 固定头 + 6 盐值末字节 + 4 时间戳 + 4 canvas + 1 校验位）
@@ -292,10 +291,8 @@ class XBogusSigner:
             if not user_agent or not isinstance(user_agent, str):
                 raise SignError("User-Agent 不能为空", algorithm="xbogus")
 
-            # 提取查询参数串
+            # 提取查询参数串（不做 URL 解码，与抖音前端保持一致）
             payload = _extract_query_string(url)
-            # URL 解码处理（与抖音前端保持一致）
-            payload = urllib.parse.unquote(payload)
 
             # 表单数据默认为空（GET 请求无表单）
             form = ""
