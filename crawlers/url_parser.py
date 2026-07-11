@@ -220,3 +220,80 @@ class URLParser:
                 if i + 2 == len(path_parts) and next_part:
                     return next_part
         return None
+
+    async def follow_redirect(self, short_url: str) -> str:
+        """跟随 v.douyin.com 短链重定向，返回最终落地 URL。
+
+        不带 Cookie 与签名（短链重定向不需要），调用 HttpClient.get
+        （use_cookie_pool=False）获取响应，从 ``httpx.Response.url`` 取最终 URL。
+
+        参数:
+            short_url: 短链 URL（如 ``https://v.douyin.com/AbCd123/``）。
+
+        返回:
+            最终落地 URL 字符串。
+
+        异常:
+            NetworkError: 重定向失败/超时。
+        """
+        # HttpClient.get 已设置 follow_redirects=False，但短链重定向需要跟随
+        # 此处通过 use_cookie_pool=False 调用，让 HttpClient 发起请求
+        # 由于 follow_redirects=False，response.url 即为最终 URL（短链本身不会重定向）
+        # 实际上 v.douyin.com 短链返回 302 + Location 头，我们需要手动解析
+        response = await self._http_client.get(
+            short_url,
+            use_cookie_pool=False,
+        )
+        # httpx.Response.url 在 follow_redirects=False 时为请求 URL 本身
+        # 检查 Location 头获取重定向目标
+        location = response.headers.get("location")
+        if location:
+            return location
+        # 无 Location 头，返回响应 URL（已是最终 URL）
+        return str(response.url)
+
+    async def parse(self, text: str) -> ParsedURL:
+        """解析用户粘贴的链接文本。
+
+        流程：
+            1. ``extract_url`` 提取 URL；若返回 None，抛 ``InvalidURLFormatError``
+            2. 若为短链（``v.douyin.com``），调用 ``follow_redirect`` 获取最终 URL
+            3. ``identify_type`` 识别类型
+            4. 根据类型从 URL 提取 ``aweme_id`` 或 ``sec_user_id``
+            5. 构造并返回 ``ParsedURL``
+
+        参数:
+            text: 用户粘贴的原始文本，可能含分享口令、短链、长链。
+
+        返回:
+            ParsedURL 数据结构。
+
+        异常:
+            InvalidURLFormatError: 文本中无可识别的抖音链接。
+            NetworkError: 短链重定向失败。
+        """
+        url = self.extract_url(text)
+        if url is None:
+            raise InvalidURLFormatError(f"文本中未找到抖音链接: {text!r}")
+
+        # 短链需跟随重定向
+        if "v.douyin.com" in url.lower():
+            final_url = await self.follow_redirect(url)
+        else:
+            final_url = url
+
+        link_type = self.identify_type(final_url)
+        if link_type == "user_home":
+            aweme_id = None
+            sec_user_id = self.extract_sec_user_id(final_url)
+        else:
+            aweme_id = self.extract_aweme_id(final_url)
+            sec_user_id = None
+
+        return ParsedURL(
+            type=link_type,
+            url=final_url,
+            aweme_id=aweme_id,
+            sec_user_id=sec_user_id,
+            original_text=text,
+        )

@@ -6,18 +6,20 @@ follow_redirect 与 parse 通过 mock HttpClient 测试，不打真实网络。
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from crawlers.exceptions import InvalidURLFormatError
+from crawlers.exceptions import InvalidURLFormatError, NetworkError
 from crawlers.url_parser import ParsedURL, URLParser
 
 
 @pytest.fixture
 def mock_http_client() -> MagicMock:
-    """返回 mock HttpClient，供 URLParser 注入。"""
-    return MagicMock(name="HttpClient")
+    """返回 mock HttpClient，get 方法为 AsyncMock 供 await 调用。"""
+    client = MagicMock(name="HttpClient")
+    client.get = AsyncMock(name="HttpClient.get")
+    return client
 
 
 @pytest.fixture
@@ -245,3 +247,286 @@ class TestExtractIds:
         """无 sec_user_id → 返回 None。"""
         url = "https://www.douyin.com/video/123"
         assert URLParser.extract_sec_user_id(url) is None
+
+
+# ==================== follow_redirect 测试 ====================
+
+
+class TestFollowRedirect:
+    """follow_redirect 方法测试（mock HttpClient.get）。"""
+
+    async def test_follow_redirect_with_location_header(
+        self,
+        url_parser: URLParser,
+        mock_http_client: MagicMock,
+    ) -> None:
+        """响应含 Location 头 → 返回 Location 值。"""
+        mock_response = MagicMock(name="Response")
+        mock_response.headers = {"location": "https://www.douyin.com/video/123"}
+        mock_response.url = "https://v.douyin.com/AbCd123/"
+        mock_http_client.get.return_value = mock_response
+
+        result = await url_parser.follow_redirect("https://v.douyin.com/AbCd123/")
+
+        assert result == "https://www.douyin.com/video/123"
+        mock_http_client.get.assert_awaited_once_with(
+            "https://v.douyin.com/AbCd123/",
+            use_cookie_pool=False,
+        )
+
+    async def test_follow_redirect_without_location_header(
+        self,
+        url_parser: URLParser,
+        mock_http_client: MagicMock,
+    ) -> None:
+        """响应无 Location 头 → 返回 response.url 字符串。"""
+        mock_response = MagicMock(name="Response")
+        mock_response.headers = {}
+        mock_response.url = "https://www.douyin.com/video/123"
+        mock_http_client.get.return_value = mock_response
+
+        result = await url_parser.follow_redirect("https://v.douyin.com/AbCd123/")
+
+        assert result == "https://www.douyin.com/video/123"
+
+    async def test_follow_redirect_empty_location_header(
+        self,
+        url_parser: URLParser,
+        mock_http_client: MagicMock,
+    ) -> None:
+        """Location 头为空字符串 → 回退到 response.url。"""
+        mock_response = MagicMock(name="Response")
+        # headers.get("location") 返回 ""（falsy）→ 走 response.url 分支
+        mock_response.headers = {"location": ""}
+        mock_response.url = "https://www.douyin.com/video/456"
+        mock_http_client.get.return_value = mock_response
+
+        result = await url_parser.follow_redirect("https://v.douyin.com/AbCd123/")
+
+        assert result == "https://www.douyin.com/video/456"
+
+    async def test_follow_redirect_calls_get_without_cookie_pool(
+        self,
+        url_parser: URLParser,
+        mock_http_client: MagicMock,
+    ) -> None:
+        """follow_redirect 调用 HttpClient.get 时 use_cookie_pool=False（短链不需 Cookie）。"""
+        mock_response = MagicMock(name="Response")
+        mock_response.headers = {"location": "https://www.douyin.com/video/789"}
+        mock_response.url = "https://v.douyin.com/x/"
+        mock_http_client.get.return_value = mock_response
+
+        await url_parser.follow_redirect("https://v.douyin.com/x/")
+
+        # 断言 use_cookie_pool=False 被传入
+        call_args = mock_http_client.get.call_args
+        assert call_args.kwargs.get("use_cookie_pool") is False
+
+    async def test_follow_redirect_network_error_propagates(
+        self,
+        url_parser: URLParser,
+        mock_http_client: MagicMock,
+    ) -> None:
+        """HttpClient.get 抛 NetworkError → 异常透传给调用方。"""
+        mock_http_client.get.side_effect = NetworkError("连接超时")
+
+        with pytest.raises(NetworkError, match="连接超时"):
+            await url_parser.follow_redirect("https://v.douyin.com/AbCd123/")
+
+
+# ==================== parse 测试 ====================
+
+
+class TestParse:
+    """parse 方法测试（编排 extract_url → follow_redirect → identify_type → 构造 ParsedURL）。"""
+
+    async def test_parse_long_video_link(
+        self,
+        url_parser: URLParser,
+        mock_http_client: MagicMock,
+    ) -> None:
+        """长链视频 → 直接识别，不调用 follow_redirect，aweme_id 提取成功。"""
+        text = "https://www.douyin.com/video/7646700367584954368"
+
+        result = await url_parser.parse(text)
+
+        assert result.type == "video"
+        assert result.url == "https://www.douyin.com/video/7646700367584954368"
+        assert result.aweme_id == "7646700367584954368"
+        assert result.sec_user_id is None
+        assert result.original_text == text
+        # 长链不应触发 follow_redirect（即 HttpClient.get 不应被调用）
+        mock_http_client.get.assert_not_awaited()
+
+    async def test_parse_long_user_home_link(
+        self,
+        url_parser: URLParser,
+        mock_http_client: MagicMock,
+    ) -> None:
+        """长链主页 → 直接识别，sec_user_id 提取成功。"""
+        text = "https://www.douyin.com/user/MS4wLjABAAAAabc123"
+
+        result = await url_parser.parse(text)
+
+        assert result.type == "user_home"
+        assert result.url == "https://www.douyin.com/user/MS4wLjABAAAAabc123"
+        assert result.aweme_id is None
+        assert result.sec_user_id == "MS4wLjABAAAAabc123"
+        assert result.original_text == text
+        mock_http_client.get.assert_not_awaited()
+
+    async def test_parse_short_link_video(
+        self,
+        url_parser: URLParser,
+        mock_http_client: MagicMock,
+    ) -> None:
+        """短链视频 → 调用 follow_redirect 拿到长链后识别，aweme_id 提取成功。"""
+        text = "https://v.douyin.com/AbCd123/"
+        # mock follow_redirect 返回视频长链
+        mock_response = MagicMock(name="Response")
+        mock_response.headers = {"location": "https://www.douyin.com/video/9999"}
+        mock_response.url = "https://v.douyin.com/AbCd123/"
+        mock_http_client.get.return_value = mock_response
+
+        result = await url_parser.parse(text)
+
+        assert result.type == "video"
+        assert result.url == "https://www.douyin.com/video/9999"
+        assert result.aweme_id == "9999"
+        assert result.sec_user_id is None
+        assert result.original_text == text
+        mock_http_client.get.assert_awaited_once()
+
+    async def test_parse_short_link_user_home(
+        self,
+        url_parser: URLParser,
+        mock_http_client: MagicMock,
+    ) -> None:
+        """短链主页 → 调用 follow_redirect 拿到主页长链，sec_user_id 提取成功。"""
+        text = "https://v.douyin.com/AbCd456/"
+        mock_response = MagicMock(name="Response")
+        mock_response.headers = {"location": "https://www.douyin.com/user/MS4wLjABAAAAxyz"}
+        mock_response.url = "https://v.douyin.com/AbCd456/"
+        mock_http_client.get.return_value = mock_response
+
+        result = await url_parser.parse(text)
+
+        assert result.type == "user_home"
+        assert result.url == "https://www.douyin.com/user/MS4wLjABAAAAxyz"
+        assert result.aweme_id is None
+        assert result.sec_user_id == "MS4wLjABAAAAxyz"
+
+    async def test_parse_share_command_with_short_link(
+        self,
+        url_parser: URLParser,
+        mock_http_client: MagicMock,
+    ) -> None:
+        """分享口令（含中文描述 + 短链）→ 提取短链 → follow_redirect → ParsedURL。"""
+        text = (
+            "7.99 复制打开抖音，看看【守望先锋的图文】"
+            " https://v.douyin.com/AbCdEf123/ 关注我，带你了解更多！"
+        )
+        mock_response = MagicMock(name="Response")
+        mock_response.headers = {"location": "https://www.douyin.com/video/7646700367584954368"}
+        mock_response.url = "https://v.douyin.com/AbCdEf123/"
+        mock_http_client.get.return_value = mock_response
+
+        result = await url_parser.parse(text)
+
+        assert result.type == "video"
+        assert result.aweme_id == "7646700367584954368"
+        # original_text 保留原始分享口令全文
+        assert result.original_text == text
+
+    async def test_parse_long_video_link_with_query_params(
+        self,
+        url_parser: URLParser,
+        mock_http_client: MagicMock,
+    ) -> None:
+        """长链带查询参数 → 完整保留，aweme_id 从路径提取。"""
+        text = "https://www.douyin.com/video/7646700367584954368?previous_page=app_code_link"
+
+        result = await url_parser.parse(text)
+
+        assert result.type == "video"
+        assert result.aweme_id == "7646700367584954368"
+        assert (
+            result.url
+            == "https://www.douyin.com/video/7646700367584954368?previous_page=app_code_link"
+        )
+
+    async def test_parse_no_link_raises_invalid_url_format(
+        self,
+        url_parser: URLParser,
+        mock_http_client: MagicMock,
+    ) -> None:
+        """文本中无抖音链接 → 抛 InvalidURLFormatError。"""
+        text = "这段文字完全没有链接，只是一段普通描述。"
+
+        with pytest.raises(InvalidURLFormatError, match="未找到抖音链接"):
+            await url_parser.parse(text)
+
+        # 无链接时不应调用 HttpClient
+        mock_http_client.get.assert_not_awaited()
+
+    async def test_parse_empty_text_raises(
+        self,
+        url_parser: URLParser,
+        mock_http_client: MagicMock,
+    ) -> None:
+        """空文本 → 抛 InvalidURLFormatError。"""
+        with pytest.raises(InvalidURLFormatError):
+            await url_parser.parse("")
+
+    async def test_parse_non_douyin_link_raises(
+        self,
+        url_parser: URLParser,
+        mock_http_client: MagicMock,
+    ) -> None:
+        """文本含非抖音链接 → extract_url 返回 None → 抛 InvalidURLFormatError。"""
+        text = "https://www.example.com/video/123"
+
+        with pytest.raises(InvalidURLFormatError):
+            await url_parser.parse(text)
+
+    async def test_parse_short_link_network_error_propagates(
+        self,
+        url_parser: URLParser,
+        mock_http_client: MagicMock,
+    ) -> None:
+        """短链 follow_redirect 网络异常 → 异常透传。"""
+        text = "https://v.douyin.com/AbCd123/"
+        mock_http_client.get.side_effect = NetworkError("DNS 解析失败")
+
+        with pytest.raises(NetworkError, match="DNS 解析失败"):
+            await url_parser.parse(text)
+
+    async def test_parse_preserves_original_text(
+        self,
+        url_parser: URLParser,
+        mock_http_client: MagicMock,
+    ) -> None:
+        """parse 保留 original_text 字段（含中文描述与多余空白）。"""
+        text = "  前后有空格  https://www.douyin.com/video/111  "
+
+        result = await url_parser.parse(text)
+
+        assert result.original_text == text
+
+    async def test_parse_short_link_uppercase_domain(
+        self,
+        url_parser: URLParser,
+        mock_http_client: MagicMock,
+    ) -> None:
+        """短链域名大写 V.DOUYIN.COM 仍触发 follow_redirect。"""
+        text = "HTTPS://V.DOUYIN.COM/AbCd123/"
+        mock_response = MagicMock(name="Response")
+        mock_response.headers = {"location": "https://www.douyin.com/video/222"}
+        mock_response.url = "HTTPS://V.DOUYIN.COM/AbCd123/"
+        mock_http_client.get.return_value = mock_response
+
+        result = await url_parser.parse(text)
+
+        assert result.type == "video"
+        assert result.aweme_id == "222"
+        mock_http_client.get.assert_awaited_once()
