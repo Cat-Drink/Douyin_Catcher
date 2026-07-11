@@ -16,8 +16,6 @@
 
 from __future__ import annotations
 
-import urllib.parse
-
 from crawlers.exceptions import SignError
 from crawlers.signer.abogus import ABogusSigner
 from crawlers.signer.mstoken import MsTokenGenerator
@@ -101,21 +99,24 @@ class Signer:
             if not ua:
                 raise SignError("User-Agent 不能为空", algorithm=None)
 
-            # 步骤 2：将 params 序列化为查询参数串，拼接到 url 上
-            params_str = urllib.parse.urlencode(params)
-            full_url = f"{url}?{params_str}" if params_str else url
-
-            # 步骤 3：X-Bogus（基于完整 URL + UA）
-            x_bogus = self._xbogus_signer.sign(full_url, ua)
-
-            # 步骤 4：a_bogus（基于参数字典 + UA）
-            a_bogus = self._abogus_signer.sign(params, ua)
-
-            # 步骤 5：msToken（随机生成）
+            # 步骤 2：msToken（随机生成，需先于 X-Bogus）
+            # msToken 必须参与 X-Bogus 计算，否则签名会被服务端拒绝
             ms_token = self._mstoken_generator.generate()
 
-            # 步骤 6：verifyFp（随机生成）
+            # 步骤 3：verifyFp（随机生成）
             verify_fp = self._verify_fp_generator.generate()
+
+            # 步骤 4：将 msToken 加入 params，构造用于签名的完整参数串
+            # 与参考实现一致：param_str = "&".join(f"{k}={v}" for k, v in params.items())
+            # 不做 URL 编码，按字典插入顺序拼接
+            sign_params = {**params, "msToken": ms_token}
+            param_str = "&".join(f"{k}={v}" for k, v in sign_params.items())
+
+            # 步骤 5：X-Bogus（基于含 msToken 的 query string + UA）
+            x_bogus = self._xbogus_signer.sign(param_str, ua)
+
+            # 步骤 6：a_bogus（基于参数字典 + UA）
+            a_bogus = self._abogus_signer.sign(sign_params, ua)
 
             # 步骤 7：组装返回
             return {
