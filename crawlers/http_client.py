@@ -13,10 +13,17 @@ from typing import TYPE_CHECKING, Literal
 
 from app.logger import get_logger
 from app.models import Cookie, now_iso
-from crawlers.exceptions import CookieInvalidError
+from crawlers.exceptions import (
+    CookieInvalidError,
+    NetworkError,
+    RateLimitedError,
+    VerifyRequiredError,
+)
 from crawlers.signer import DEFAULT_USER_AGENT
 
 if TYPE_CHECKING:
+    import httpx
+
     from app.repositories import CookieRepository
     from crawlers.signer import Signer
 
@@ -222,3 +229,94 @@ class HttpClient:
         """
         cookie = self._cookie_repository.get_valid()
         return cookie is None
+
+    # === 风控响应处理 ===
+
+    def _handle_response(
+        self,
+        response: httpx.Response,
+        cookie_id: int | None,
+    ) -> httpx.Response:
+        """对 httpx 响应进行风控分类，转换为对应异常。
+
+        分类逻辑（按优先级）:
+            1. ``status_code in {461, 412}`` → 上报 Cookie 失败，抛 ``CookieInvalidError``
+            2. ``status_code == 429`` → 上报 Cookie 失败，抛 ``RateLimitedError``
+            3. HTTP 200 + 验证 HTML 特征 → 上报 Cookie 失败，抛 ``VerifyRequiredError``
+            4. HTTP 200 + JSON ``status_code != 0`` → 原样返回（业务层处理）
+            5. HTTP 200 + 正常数据 → 上报 Cookie 成功，原样返回
+            6. 其他 4xx → 抛 ``NetworkError``
+            7. 其他 5xx → 抛 ``NetworkError``
+
+        参数:
+            response: httpx 响应对象。
+            cookie_id: 关联的 Cookie ID，None 表示不带 Cookie 请求（不上报）。
+
+        返回:
+            成功时返回原 ``httpx.Response``，供上层解析。
+
+        异常:
+            CookieInvalidError: 461/412 风控响应。
+            RateLimitedError: 429 限流响应。
+            VerifyRequiredError: 响应含验证 HTML。
+            NetworkError: 其他 4xx/5xx 错误。
+        """
+        status = response.status_code
+
+        # 优先级 1：461/412 风控（Cookie 失效）
+        if status in RISK_STATUS_CODES:
+            if cookie_id is not None:
+                self.report_cookie_fail(cookie_id)
+            logger.warning("风控响应 %d: url=%s", status, response.url)
+            raise CookieInvalidError(f"Cookie 失效或被风控（HTTP {status}）")
+
+        # 优先级 2：429 限流
+        if status == 429:
+            if cookie_id is not None:
+                self.report_cookie_fail(cookie_id)
+            logger.warning("限流响应 429: url=%s", response.url)
+            raise RateLimitedError("请求过于频繁，触发限流（HTTP 429）")
+
+        # 优先级 3：200 + 验证 HTML
+        if status == 200 and self._is_verify_response(response):
+            if cookie_id is not None:
+                self.report_cookie_fail(cookie_id)
+            logger.warning("验证 HTML 响应: url=%s", response.url)
+            raise VerifyRequiredError("抖音要求安全验证")
+
+        # 优先级 4 & 5：200 正常响应
+        if status == 200:
+            # status_code 非 0 的业务错误由上层处理，这里原样返回
+            # 但 Cookie 请求本身成功，上报 success
+            if cookie_id is not None:
+                self.report_cookie_success(cookie_id)
+            return response
+
+        # 优先级 6 & 7：其他 4xx/5xx
+        logger.warning("HTTP 错误响应 %d: url=%s", status, response.url)
+        raise NetworkError(f"HTTP {status} 错误响应")
+
+    @staticmethod
+    def _is_verify_response(response: httpx.Response) -> bool:
+        """检测响应是否含滑动验证 HTML 特征。
+
+        仅在 Content-Type 非 JSON 时检测，避免对大 JSON 响应做全文扫描。
+
+        参数:
+            response: httpx 响应对象。
+
+        返回:
+            含验证特征返回 True，否则 False。
+        """
+        content_type = response.headers.get("content-type", "").lower()
+        # JSON 响应不走验证 HTML 分支
+        if "application/json" in content_type:
+            return False
+        # 仅在 HTML 或 text 响应中检测
+        if "html" not in content_type and "text" not in content_type:
+            return False
+        try:
+            text = response.text
+        except (UnicodeDecodeError, ValueError):
+            return False
+        return any(marker in text for marker in VERIFY_HTML_MARKERS)

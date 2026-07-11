@@ -7,11 +7,17 @@ get 异步方法。所有 httpx 响应用 respx mock，CookieRepository 用内�
 
 from __future__ import annotations
 
+import httpx
 import pytest
 
 from app.models import Cookie
 from app.repositories import CookieRepository
-from crawlers.exceptions import CookieInvalidError
+from crawlers.exceptions import (
+    CookieInvalidError,
+    NetworkError,
+    RateLimitedError,
+    VerifyRequiredError,
+)
 from crawlers.http_client import (
     DEFAULT_HEADERS,
     MAX_FAIL_COUNT,
@@ -387,3 +393,201 @@ class TestCookiePoolManagement:
         assert updated is not None
         assert updated.fail_count == 1
         assert updated.status == "valid"
+
+
+# ==================== 风控响应处理测试 ====================
+
+
+def _make_response(
+    status_code: int,
+    *,
+    json_body: dict | None = None,
+    text_body: str | None = None,
+    content_type: str = "application/json",
+) -> httpx.Response:
+    """构造测试用 httpx.Response（不发起真实请求）。"""
+    if json_body is not None:
+        import json
+
+        content = json.dumps(json_body).encode("utf-8")
+    elif text_body is not None:
+        content = text_body.encode("utf-8")
+    else:
+        content = b""
+    return httpx.Response(
+        status_code=status_code,
+        content=content,
+        headers={"content-type": content_type},
+        request=httpx.Request("GET", "https://www.douyin.com/test"),
+    )
+
+
+class TestHandleResponse:
+    """_handle_response 风控响应分类测试。"""
+
+    def test_461_raises_cookie_invalid(
+        self,
+        sample_cookies: list[Cookie],
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """461 → 抛 CookieInvalidError，上报 Cookie 失败。"""
+        client = HttpClient(cookie_repo, stub_signer)
+        cid = sample_cookies[0].id
+        resp = _make_response(461, text_body="blocked", content_type="text/html")
+        with pytest.raises(CookieInvalidError, match="461"):
+            client._handle_response(resp, cid)
+        updated = cookie_repo.get_by_id(cid)
+        assert updated is not None
+        assert updated.fail_count == 1
+
+    def test_412_raises_cookie_invalid(
+        self,
+        sample_cookies: list[Cookie],
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """412 → 抛 CookieInvalidError，上报 Cookie 失败。"""
+        client = HttpClient(cookie_repo, stub_signer)
+        cid = sample_cookies[0].id
+        resp = _make_response(412, text_body="blocked", content_type="text/html")
+        with pytest.raises(CookieInvalidError, match="412"):
+            client._handle_response(resp, cid)
+        updated = cookie_repo.get_by_id(cid)
+        assert updated is not None
+        assert updated.fail_count == 1
+
+    def test_429_raises_rate_limited(
+        self,
+        sample_cookies: list[Cookie],
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """429 → 抛 RateLimitedError，上报 Cookie 失败。"""
+        client = HttpClient(cookie_repo, stub_signer)
+        cid = sample_cookies[0].id
+        resp = _make_response(429, text_body="rate limited", content_type="text/plain")
+        with pytest.raises(RateLimitedError, match="429"):
+            client._handle_response(resp, cid)
+        updated = cookie_repo.get_by_id(cid)
+        assert updated is not None
+        assert updated.fail_count == 1
+
+    def test_200_verify_html_raises_verify_required(
+        self,
+        sample_cookies: list[Cookie],
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """200 + 验证 HTML 特征 → 抛 VerifyRequiredError，上报 Cookie 失败。"""
+        client = HttpClient(cookie_repo, stub_signer)
+        cid = sample_cookies[0].id
+        resp = _make_response(
+            200,
+            text_body="<html><body>captcha_verify required</body></html>",
+            content_type="text/html",
+        )
+        with pytest.raises(VerifyRequiredError):
+            client._handle_response(resp, cid)
+        updated = cookie_repo.get_by_id(cid)
+        assert updated is not None
+        assert updated.fail_count == 1
+
+    def test_200_normal_json_returns_response(
+        self,
+        sample_cookies: list[Cookie],
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """200 + 正常 JSON → 返回 response，上报 Cookie 成功。"""
+        client = HttpClient(cookie_repo, stub_signer)
+        cid = sample_cookies[0].id
+        resp = _make_response(200, json_body={"status_code": 0, "data": "ok"})
+        result = client._handle_response(resp, cid)
+        assert result is resp
+        updated = cookie_repo.get_by_id(cid)
+        assert updated is not None
+        assert updated.fail_count == 0
+
+    def test_200_status_code_nonzero_returns_response(
+        self,
+        sample_cookies: list[Cookie],
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """200 + status_code 非 0 → 原样返回（业务层处理），上报 Cookie 成功。"""
+        client = HttpClient(cookie_repo, stub_signer)
+        cid = sample_cookies[0].id
+        resp = _make_response(200, json_body={"status_code": 4000, "message": "video gone"})
+        result = client._handle_response(resp, cid)
+        assert result is resp
+        # Cookie 请求本身成功，fail_count 应被重置
+        updated = cookie_repo.get_by_id(cid)
+        assert updated is not None
+        assert updated.fail_count == 0
+
+    def test_404_raises_network_error(
+        self,
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """404 → 抛 NetworkError。"""
+        client = HttpClient(cookie_repo, stub_signer)
+        resp = _make_response(404, text_body="not found", content_type="text/plain")
+        with pytest.raises(NetworkError, match="404"):
+            client._handle_response(resp, None)
+
+    def test_500_raises_network_error(
+        self,
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """500 → 抛 NetworkError。"""
+        client = HttpClient(cookie_repo, stub_signer)
+        resp = _make_response(500, text_body="server error", content_type="text/plain")
+        with pytest.raises(NetworkError, match="500"):
+            client._handle_response(resp, None)
+
+    def test_no_cookie_id_skips_report(
+        self,
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """cookie_id=None 时不上报 Cookie（短链重定向场景）。"""
+        client = HttpClient(cookie_repo, stub_signer)
+        resp = _make_response(461, text_body="blocked", content_type="text/html")
+        # 不抛 CookieRepository 相关异常（因为不上报）
+        with pytest.raises(CookieInvalidError):
+            client._handle_response(resp, None)
+
+    def test_verify_html_skipped_for_json(
+        self,
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """JSON 响应不走验证 HTML 检测（即使含 captcha_verify 字符串）。"""
+        client = HttpClient(cookie_repo, stub_signer)
+        # JSON 响应体含 captcha_verify 字符串，但 Content-Type 为 JSON
+        resp = _make_response(
+            200,
+            json_body={"status_code": 0, "msg": "captcha_verify should not trigger"},
+        )
+        # 应正常返回，不抛 VerifyRequiredError
+        result = client._handle_response(resp, None)
+        assert result is resp
+
+    def test_verify_html_non_text_content_skipped(
+        self,
+        cookie_repo: CookieRepository,
+        stub_signer: StubSigner,
+    ) -> None:
+        """非 text/html Content-Type 不检测验证 HTML（如二进制响应）。"""
+        client = HttpClient(cookie_repo, stub_signer)
+        resp = _make_response(
+            200,
+            text_body="captcha_verify",
+            content_type="application/octet-stream",
+        )
+        # 非 text/html，不检测验证特征，按正常 200 返回
+        result = client._handle_response(resp, None)
+        assert result is resp
