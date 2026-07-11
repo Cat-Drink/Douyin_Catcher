@@ -207,9 +207,7 @@ def migrate(conn: sqlite3.Connection) -> None:
         conn: sqlite3.Connection 连接实例
     """
     # 读取当前版本
-    row = conn.execute(
-        "SELECT MAX(version) AS max_version FROM schema_version"
-    ).fetchone()
+    row = conn.execute("SELECT MAX(version) AS max_version FROM schema_version").fetchone()
     current_version = row["max_version"] if row and row["max_version"] is not None else 0
 
     # 依次执行迁移

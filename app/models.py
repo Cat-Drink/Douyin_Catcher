@@ -15,7 +15,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 
-
 # === 枚举类型 ===
 # 继承 str, Enum，便于直接序列化为 SQLite TEXT
 

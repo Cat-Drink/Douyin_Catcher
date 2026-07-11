@@ -16,7 +16,6 @@ import sqlite3
 
 from app.models import Cookie, Metadata, Task, TaskItem, now_iso
 
-
 # === 行映射私有函数 ===
 
 
@@ -134,9 +133,7 @@ class TaskRepository:
 
     def get(self, task_id: int) -> Task | None:
         """按 id 查询任务，无结果返回 None。"""
-        row = self._conn.execute(
-            "SELECT * FROM tasks WHERE id = ?", (task_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         return _row_to_task(row) if row else None
 
     def get_by_status(self, status: str) -> list[Task]:
@@ -246,9 +243,7 @@ class TaskItemRepository:
 
     def get(self, item_id: int) -> TaskItem | None:
         """按 id 查询任务项，无结果返回 None。"""
-        row = self._conn.execute(
-            "SELECT * FROM task_items WHERE id = ?", (item_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM task_items WHERE id = ?", (item_id,)).fetchone()
         return _row_to_task_item(row) if row else None
 
     def get_by_task(self, task_id: int) -> list[TaskItem]:
@@ -353,7 +348,8 @@ class TaskItemRepository:
         """
         with self._conn:
             cursor = self._conn.execute(
-                "UPDATE task_items SET status = 'paused', updated_at = ? WHERE status = 'downloading'",
+                "UPDATE task_items SET status = 'paused', updated_at = ? "
+                "WHERE status = 'downloading'",
                 (now_iso(),),
             )
             return cursor.rowcount
@@ -416,9 +412,7 @@ class CookieRepository:
 
     def get_by_id(self, cookie_id: int) -> Cookie | None:
         """按 id 查询 Cookie，无结果返回 None。"""
-        row = self._conn.execute(
-            "SELECT * FROM cookies WHERE id = ?", (cookie_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM cookies WHERE id = ?", (cookie_id,)).fetchone()
         return _row_to_cookie(row) if row else None
 
     def update_status(self, cookie_id: int, status: str) -> None:
@@ -457,9 +451,7 @@ class CookieRepository:
 
     def get_all(self) -> list[Cookie]:
         """查询所有 Cookie，按 created_at 排序。"""
-        rows = self._conn.execute(
-            "SELECT * FROM cookies ORDER BY created_at"
-        ).fetchall()
+        rows = self._conn.execute("SELECT * FROM cookies ORDER BY created_at").fetchall()
         return [_row_to_cookie(row) for row in rows]
 
 
@@ -471,9 +463,7 @@ class ConfigRepository:
 
     def get(self, key: str) -> str | None:
         """按 key 查询配置值，无结果返回 None。"""
-        row = self._conn.execute(
-            "SELECT value FROM config WHERE key = ?", (key,)
-        ).fetchone()
+        row = self._conn.execute("SELECT value FROM config WHERE key = ?", (key,)).fetchone()
         return row["value"] if row else None
 
     def set(self, key: str, value: str) -> None:
@@ -546,9 +536,7 @@ class MetadataRepository:
 
     def get(self, metadata_id: int) -> Metadata | None:
         """按 id 查询元数据，无结果返回 None。"""
-        row = self._conn.execute(
-            "SELECT * FROM metadata WHERE id = ?", (metadata_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM metadata WHERE id = ?", (metadata_id,)).fetchone()
         return _row_to_metadata(row) if row else None
 
     def get_by_task_item(self, task_item_id: int) -> Metadata | None:
