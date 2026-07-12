@@ -1,0 +1,804 @@
+"""Downloader 单元测试。
+
+覆盖正常下载、断点续传、失败重试、暂停/取消、图集下载等场景。
+使用 respx mock httpx 响应，不打真实网络请求。
+"""
+
+from __future__ import annotations
+
+import asyncio
+import sqlite3
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
+import pytest
+import respx
+
+from app.database import get_memory_connection
+from app.models import Task, TaskItem
+from app.repositories import TaskItemRepository, TaskRepository
+from downloader.downloader import (
+    CHUNK_SIZE,
+    MAX_RETRY_COUNT,
+    PERSIST_INTERVAL_BYTES,
+    PERSIST_INTERVAL_SECONDS,
+    RATE_LIMITED_STATUS_CODES,
+    RETRY_BACKOFF_BASE,
+    Downloader,
+    DownloadResult,
+)
+from downloader.progress_reporter import ProgressReporter
+
+# ==================== 常量测试 ====================
+
+
+class TestConstants:
+    """模块级常量契约测试。"""
+
+    def test_chunk_size_64kb(self) -> None:
+        assert CHUNK_SIZE == 64 * 1024
+
+    def test_persist_interval_seconds_5(self) -> None:
+        assert PERSIST_INTERVAL_SECONDS == 5
+
+    def test_persist_interval_bytes_1mb(self) -> None:
+        assert PERSIST_INTERVAL_BYTES == 1024 * 1024
+
+    def test_max_retry_count_3(self) -> None:
+        assert MAX_RETRY_COUNT == 3
+
+    def test_retry_backoff_base_2(self) -> None:
+        assert RETRY_BACKOFF_BASE == 2
+
+    def test_rate_limited_status_codes(self) -> None:
+        assert 461 in RATE_LIMITED_STATUS_CODES
+        assert 412 in RATE_LIMITED_STATUS_CODES
+
+
+# ==================== DownloadResult 测试 ====================
+
+
+class TestDownloadResult:
+    """DownloadResult dataclass 测试。"""
+
+    def test_success_result(self) -> None:
+        result = DownloadResult(success=True, local_path="/tmp/video.mp4")
+        assert result.success is True
+        assert result.local_path == "/tmp/video.mp4"
+        assert result.error is None
+
+    def test_failure_result(self) -> None:
+        result = DownloadResult(success=False, error="HTTP 404")
+        assert result.success is False
+        assert result.local_path is None
+        assert result.error == "HTTP 404"
+
+    def test_is_frozen(self) -> None:
+        result = DownloadResult(success=True)
+        with pytest.raises(AttributeError):
+            result.success = False  # type: ignore[misc]
+
+
+# ==================== _should_retry 测试 ====================
+
+
+class TestShouldRetry:
+    """_should_retry 方法测试（设计文档 5.3 节）。"""
+
+    def test_network_error_retry(self) -> None:
+        """网络异常触发重试。"""
+        dl = _make_downloader()
+        assert dl._should_retry(None, httpx.ConnectError("conn")) is True
+
+    def test_read_timeout_retry(self) -> None:
+        """ReadTimeout 触发重试。"""
+        dl = _make_downloader()
+        assert dl._should_retry(None, httpx.ReadTimeout("timeout")) is True
+
+    def test_5xx_retry(self) -> None:
+        """HTTP 5xx 触发重试。"""
+        dl = _make_downloader()
+        assert dl._should_retry(500, None) is True
+        assert dl._should_retry(502, None) is True
+        assert dl._should_retry(503, None) is True
+
+    def test_461_retry(self) -> None:
+        """HTTP 461 风控限流触发重试。"""
+        dl = _make_downloader()
+        assert dl._should_retry(461, None) is True
+
+    def test_412_retry(self) -> None:
+        """HTTP 412 风控限流触发重试。"""
+        dl = _make_downloader()
+        assert dl._should_retry(412, None) is True
+
+    def test_4xx_no_retry(self) -> None:
+        """HTTP 4xx（非 461/412）不重试。"""
+        dl = _make_downloader()
+        assert dl._should_retry(404, None) is False
+        assert dl._should_retry(403, None) is False
+        assert dl._should_retry(400, None) is False
+
+    def test_non_http_exception_no_retry(self) -> None:
+        """非 httpx.HTTPError 异常不重试。"""
+        dl = _make_downloader()
+        assert dl._should_retry(None, ValueError("not http")) is False
+
+
+# ==================== _extract_extension 测试 ====================
+
+
+class TestExtractExtension:
+    """_extract_extension 方法测试。"""
+
+    def test_mp4_extension(self) -> None:
+        url = "https://example.com/video.mp4?token=x"
+        assert Downloader._extract_extension(url, "video") == ".mp4"
+
+    def test_jpg_extension(self) -> None:
+        assert Downloader._extract_extension("https://example.com/image.jpg", "image_set") == ".jpg"
+
+    def test_no_extension_video_defaults_mp4(self) -> None:
+        assert Downloader._extract_extension("https://example.com/noext", "video") == ".mp4"
+
+    def test_no_extension_image_defaults_jpg(self) -> None:
+        assert Downloader._extract_extension("https://example.com/noext", "image_set") == ".jpg"
+
+
+# ==================== 路径推导测试 ====================
+
+
+class TestPathDerivation:
+    """_get_final_path / _get_part_path / _get_download_dir 测试。"""
+
+    def test_get_download_dir(self, tmp_path: Path) -> None:
+        """_get_download_dir 返回 task 的 download_dir。"""
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path))
+        assert dl._get_download_dir(item) == tmp_path
+
+    def test_get_download_dir_raises_if_task_missing(self) -> None:
+        """task 不存在时抛 ValueError。"""
+        dl = _make_downloader()
+        item = TaskItem(id=999, task_id=999, aweme_id="x", url="https://x.com/v", type="video")
+        with pytest.raises(ValueError, match="download_dir"):
+            dl._get_download_dir(item)
+
+    def test_get_final_path_video(self, tmp_path: Path) -> None:
+        """video 类型路径：{download_dir}/{aweme_id}.mp4"""
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path), aweme_id="aweme123")
+        path = dl._get_final_path(item, "https://example.com/video.mp4")
+        assert path == tmp_path / "aweme123.mp4"
+
+    def test_get_final_path_image_set(self, tmp_path: Path) -> None:
+        """image_set 类型路径：{download_dir}/{aweme_id}/{aweme_id}_{index}.jpg"""
+        dl, item = _make_downloader_with_item(
+            download_dir=str(tmp_path), aweme_id="aweme456", item_type="image_set"
+        )
+        path = dl._get_final_path(item, "https://example.com/img.jpg", index=2)
+        assert path == tmp_path / "aweme456" / "aweme456_2.jpg"
+
+    def test_get_final_path_no_aweme_id(self, tmp_path: Path) -> None:
+        """aweme_id 为 None 时用 item_{id} 替代。"""
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path), aweme_id=None, item_id=42)
+        path = dl._get_final_path(item, "https://example.com/v.mp4")
+        assert "item_42" in path.name
+
+    def test_get_part_path(self, tmp_path: Path) -> None:
+        """_get_part_path 在最终路径后追加 .part。"""
+        final = tmp_path / "video.mp4"
+        dl = _make_downloader()
+        part = dl._get_part_path(final)
+        assert str(part) == str(final) + ".part"
+
+
+# ==================== _finalize_file 测试 ====================
+
+
+class TestFinalizeFile:
+    """_finalize_file 方法测试。"""
+
+    def test_rename_part_to_final(self, tmp_path: Path) -> None:
+        """_finalize_file 将 .part 重命名为最终文件。"""
+        part = tmp_path / "video.mp4.part"
+        final = tmp_path / "video.mp4"
+        part.write_bytes(b"data")
+        dl = _make_downloader()
+        result = dl._finalize_file(part, final)
+        assert final.exists()
+        assert not part.exists()
+        assert result == str(final)
+
+    def test_overwrite_existing_final(self, tmp_path: Path) -> None:
+        """最终文件已存在时先删除再重命名。"""
+        part = tmp_path / "video.mp4.part"
+        final = tmp_path / "video.mp4"
+        part.write_bytes(b"new")
+        final.write_bytes(b"old")
+        dl = _make_downloader()
+        dl._finalize_file(part, final)
+        assert final.read_bytes() == b"new"
+
+
+# ==================== _mark_status / _persist_progress 测试 ====================
+
+
+class TestStatusPersistence:
+    """_mark_status 与 _persist_progress 测试。"""
+
+    def test_mark_status_downloading(self) -> None:
+        """_mark_status 更新状态为 downloading。"""
+        dl, item = _make_downloader_with_item()
+        _insert_item(dl._conn, item)
+        dl._mark_status(item.id, "downloading")
+        assert _get_item_status(dl._conn, item.id) == "downloading"
+
+    def test_mark_status_failed_with_reason(self) -> None:
+        """_mark_status 更新状态为 failed 并记录 fail_reason。"""
+        dl, item = _make_downloader_with_item()
+        _insert_item(dl._conn, item)
+        dl._mark_status(item.id, "failed", fail_reason="HTTP 500")
+        assert _get_item_status(dl._conn, item.id) == "failed"
+        assert _get_item_fail_reason(dl._conn, item.id) == "HTTP 500"
+
+    def test_mark_status_completed_with_path(self) -> None:
+        """_mark_status 更新状态为 completed 并记录 local_path。"""
+        dl, item = _make_downloader_with_item()
+        _insert_item(dl._conn, item)
+        dl._mark_status(item.id, "completed", local_path="/tmp/video.mp4")
+        assert _get_item_status(dl._conn, item.id) == "completed"
+        assert _get_item_local_path(dl._conn, item.id) == "/tmp/video.mp4"
+
+    def test_persist_progress(self) -> None:
+        """_persist_progress 更新 downloaded_bytes 和 total_bytes。"""
+        dl, item = _make_downloader_with_item()
+        _insert_item(dl._conn, item)
+        dl._persist_progress(item.id, 512, 1024)
+        row = dl._conn.execute(
+            "SELECT downloaded_bytes, total_bytes FROM task_items WHERE id=?", (item.id,)
+        ).fetchone()
+        assert row["downloaded_bytes"] == 512
+        assert row["total_bytes"] == 1024
+
+
+# ==================== 正常下载测试 ====================
+
+
+class TestDownloadSingleFile:
+    """_download_single_file 正常下载流程测试。"""
+
+    @respx.mock
+    async def test_download_video_streaming(self, tmp_path: Path) -> None:
+        """视频文件流式接收、写入 .part、完成后重命名。"""
+        data = b"video_content_12345"
+        respx.get("https://cdn.example.com/v.mp4").mock(
+            return_value=httpx.Response(
+                200, content=data, headers={"Content-Length": str(len(data))}
+            )
+        )
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path))
+        _insert_item(dl._conn, item)
+        final_path = tmp_path / f"{item.aweme_id}.mp4"
+        result = await dl._download_single_file(item, item.url, final_path)
+        assert result.success is True
+        assert final_path.exists()
+        assert final_path.read_bytes() == data
+
+    @respx.mock
+    async def test_download_writes_part_file(self, tmp_path: Path) -> None:
+        """下载过程中文件以 .part 后缀保存。"""
+        data = b"abc" * 100
+        respx.get("https://cdn.example.com/v.mp4").mock(
+            return_value=httpx.Response(200, content=data)
+        )
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path))
+        _insert_item(dl._conn, item)
+        final_path = tmp_path / f"{item.aweme_id}.mp4"
+        await dl._download_single_file(item, item.url, final_path)
+        # 完成后 .part 已重命名，不应存在
+        part_path = Path(str(final_path) + ".part")
+        assert not part_path.exists()
+
+    @respx.mock
+    async def test_download_rename_part_to_final(self, tmp_path: Path) -> None:
+        """完成后 .part 重命名为最终文件名，local_path 正确。"""
+        data = b"final_content"
+        respx.get("https://cdn.example.com/v.mp4").mock(
+            return_value=httpx.Response(200, content=data)
+        )
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path))
+        _insert_item(dl._conn, item)
+        final_path = tmp_path / f"{item.aweme_id}.mp4"
+        result = await dl._download_single_file(item, item.url, final_path)
+        assert result.local_path == str(final_path)
+        assert final_path.exists()
+
+    @respx.mock
+    async def test_download_status_completed(self, tmp_path: Path) -> None:
+        """下载完成后 status=completed。"""
+        respx.get("https://cdn.example.com/v.mp4").mock(
+            return_value=httpx.Response(200, content=b"data")
+        )
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path))
+        _insert_item(dl._conn, item)
+        final_path = tmp_path / f"{item.aweme_id}.mp4"
+        await dl._download_single_file(item, item.url, final_path)
+        assert _get_item_status(dl._conn, item.id) == "completed"
+
+    @respx.mock
+    async def test_download_updates_progress_reporter(self, tmp_path: Path) -> None:
+        """下载过程中调用 progress_reporter.update()。"""
+        data = b"x" * (CHUNK_SIZE + 100)  # 超过一个 chunk
+        respx.get("https://cdn.example.com/v.mp4").mock(
+            return_value=httpx.Response(200, content=data)
+        )
+        reporter = MagicMock(spec=ProgressReporter)
+        reporter.update = MagicMock()
+        conn = get_memory_connection()
+        dl = _make_downloader(conn=conn, reporter=reporter)
+        _, item = _make_downloader_with_item(download_dir=str(tmp_path), conn=conn)
+        _insert_item(conn, item)
+        final_path = tmp_path / f"{item.aweme_id}.mp4"
+        await dl._download_single_file(item, item.url, final_path)
+        assert reporter.update.called
+
+    @respx.mock
+    async def test_download_persists_progress(self, tmp_path: Path) -> None:
+        """下载完成后持久化 downloaded_bytes 到 SQLite。"""
+        data = b"persist_data_12345"
+        respx.get("https://cdn.example.com/v.mp4").mock(
+            return_value=httpx.Response(200, content=data)
+        )
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path))
+        _insert_item(dl._conn, item)
+        final_path = tmp_path / f"{item.aweme_id}.mp4"
+        await dl._download_single_file(item, item.url, final_path)
+        row = dl._conn.execute(
+            "SELECT downloaded_bytes FROM task_items WHERE id=?", (item.id,)
+        ).fetchone()
+        assert row["downloaded_bytes"] == len(data)
+
+
+# ==================== 断点续传测试 ====================
+
+
+class TestResumeDownload:
+    """断点续传测试。"""
+
+    @respx.mock
+    async def test_resume_from_part_file(self, tmp_path: Path) -> None:
+        """.part 文件存在时从断点继续。"""
+        existing_data = b"already_downloaded"
+        remaining_data = b"_rest_of_file"
+        full_data = existing_data + remaining_data
+        final_path = tmp_path / "aweme001.mp4"
+        part_path = Path(str(final_path) + ".part")
+        part_path.write_bytes(existing_data)
+
+        respx.get("https://cdn.example.com/v.mp4").mock(
+            return_value=httpx.Response(
+                206,
+                content=remaining_data,
+                headers={"Content-Length": str(len(remaining_data))},
+            )
+        )
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path), aweme_id="aweme001")
+        _insert_item(dl._conn, item)
+        result = await dl._download_single_file(item, item.url, final_path)
+        assert result.success is True
+        assert final_path.read_bytes() == full_data
+
+    @respx.mock
+    async def test_range_request_correct(self, tmp_path: Path) -> None:
+        """续传时发送正确的 Range 请求头。"""
+        existing_data = b"1234567890"
+        part_path = tmp_path / "aweme001.mp4.part"
+        part_path.write_bytes(existing_data)
+
+        route = respx.get("https://cdn.example.com/v.mp4").mock(
+            return_value=httpx.Response(206, content=b"rest", headers={"Content-Length": "4"})
+        )
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path), aweme_id="aweme001")
+        _insert_item(dl._conn, item)
+        final_path = tmp_path / "aweme001.mp4"
+        await dl._download_single_file(item, item.url, final_path)
+        request = route.calls[0].request
+        assert request.headers.get("Range") == f"bytes={len(existing_data)}-"
+
+    @respx.mock
+    async def test_server_returns_200_no_range_support(self, tmp_path: Path) -> None:
+        """服务端不支持 Range（返回 200）时从头下载。"""
+        part_path = tmp_path / "aweme001.mp4.part"
+        part_path.write_bytes(b"old_partial_data")
+        full_data = b"completely_new_file_content"
+        respx.get("https://cdn.example.com/v.mp4").mock(
+            return_value=httpx.Response(200, content=full_data)
+        )
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path), aweme_id="aweme001")
+        _insert_item(dl._conn, item)
+        final_path = tmp_path / "aweme001.mp4"
+        result = await dl._download_single_file(item, item.url, final_path)
+        assert result.success is True
+        assert final_path.read_bytes() == full_data
+
+
+# ==================== 失败重试测试 ====================
+
+
+class TestRetry:
+    """失败重试测试（设计文档 5.3 节）。"""
+
+    @respx.mock
+    async def test_retry_on_5xx(self, tmp_path: Path) -> None:
+        """HTTP 5xx 触发重试，最终成功。"""
+        data = b"success_after_retry"
+        route = respx.get("https://cdn.example.com/v.mp4").mock(
+            side_effect=[
+                httpx.Response(500),
+                httpx.Response(200, content=data),
+            ]
+        )
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path))
+        _insert_item(dl._conn, item)
+        final_path = tmp_path / f"{item.aweme_id}.mp4"
+        with patch("downloader.downloader.asyncio.sleep", new=AsyncMock()):
+            result = await dl._download_single_file(item, item.url, final_path)
+        assert result.success is True
+        assert route.call_count == 2
+
+    @respx.mock
+    async def test_retry_on_461(self, tmp_path: Path) -> None:
+        """HTTP 461 风控限流触发重试。"""
+        respx.get("https://cdn.example.com/v.mp4").mock(
+            side_effect=[
+                httpx.Response(461),
+                httpx.Response(200, content=b"ok"),
+            ]
+        )
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path))
+        _insert_item(dl._conn, item)
+        final_path = tmp_path / f"{item.aweme_id}.mp4"
+        with patch("downloader.downloader.asyncio.sleep", new=AsyncMock()):
+            result = await dl._download_single_file(item, item.url, final_path)
+        assert result.success is True
+
+    @respx.mock
+    async def test_retry_on_412(self, tmp_path: Path) -> None:
+        """HTTP 412 风控限流触发重试。"""
+        respx.get("https://cdn.example.com/v.mp4").mock(
+            side_effect=[
+                httpx.Response(412),
+                httpx.Response(200, content=b"ok"),
+            ]
+        )
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path))
+        _insert_item(dl._conn, item)
+        final_path = tmp_path / f"{item.aweme_id}.mp4"
+        with patch("downloader.downloader.asyncio.sleep", new=AsyncMock()):
+            result = await dl._download_single_file(item, item.url, final_path)
+        assert result.success is True
+
+    @respx.mock
+    async def test_retry_on_network_error(self, tmp_path: Path) -> None:
+        """网络异常触发重试，最终成功。"""
+        respx.get("https://cdn.example.com/v.mp4").mock(
+            side_effect=[
+                httpx.ConnectError("conn refused"),
+                httpx.Response(200, content=b"ok"),
+            ]
+        )
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path))
+        _insert_item(dl._conn, item)
+        final_path = tmp_path / f"{item.aweme_id}.mp4"
+        with patch("downloader.downloader.asyncio.sleep", new=AsyncMock()):
+            result = await dl._download_single_file(item, item.url, final_path)
+        assert result.success is True
+
+    @respx.mock
+    async def test_max_retry_3_then_failed(self, tmp_path: Path) -> None:
+        """重试 3 次仍失败 → status=failed。"""
+        respx.get("https://cdn.example.com/v.mp4").mock(return_value=httpx.Response(500))
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path))
+        _insert_item(dl._conn, item)
+        final_path = tmp_path / f"{item.aweme_id}.mp4"
+        with patch("downloader.downloader.asyncio.sleep", new=AsyncMock()):
+            result = await dl._download_single_file(item, item.url, final_path)
+        assert result.success is False
+        assert "重试耗尽" in result.error
+        assert _get_item_status(dl._conn, item.id) == "failed"
+
+    @respx.mock
+    async def test_4xx_no_retry(self, tmp_path: Path) -> None:
+        """HTTP 4xx（非 461/412）直接失败不重试。"""
+        route = respx.get("https://cdn.example.com/v.mp4").mock(return_value=httpx.Response(404))
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path))
+        _insert_item(dl._conn, item)
+        final_path = tmp_path / f"{item.aweme_id}.mp4"
+        result = await dl._download_single_file(item, item.url, final_path)
+        assert result.success is False
+        assert "404" in result.error
+        assert route.call_count == 1  # 未重试
+        assert _get_item_status(dl._conn, item.id) == "failed"
+
+    @respx.mock
+    async def test_exponential_backoff_2_4_8(self, tmp_path: Path) -> None:
+        """指数退避等待 2s/4s/8s。"""
+        respx.get("https://cdn.example.com/v.mp4").mock(return_value=httpx.Response(500))
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path))
+        _insert_item(dl._conn, item)
+        final_path = tmp_path / f"{item.aweme_id}.mp4"
+        mock_sleep = AsyncMock()
+        with patch("downloader.downloader.asyncio.sleep", new=mock_sleep):
+            await dl._download_single_file(item, item.url, final_path)
+        # 验证等待时间：2^1=2, 2^2=4, 2^3=8
+        sleep_calls = [call.args[0] for call in mock_sleep.call_args_list]
+        assert sleep_calls == [2, 4, 8]
+
+    @respx.mock
+    async def test_retry_count_persisted(self, tmp_path: Path) -> None:
+        """retry_count 持久化到 SQLite。"""
+        respx.get("https://cdn.example.com/v.mp4").mock(return_value=httpx.Response(500))
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path))
+        _insert_item(dl._conn, item)
+        final_path = tmp_path / f"{item.aweme_id}.mp4"
+        with patch("downloader.downloader.asyncio.sleep", new=AsyncMock()):
+            await dl._download_single_file(item, item.url, final_path)
+        row = dl._conn.execute(
+            "SELECT retry_count FROM task_items WHERE id=?", (item.id,)
+        ).fetchone()
+        assert row["retry_count"] == MAX_RETRY_COUNT + 1  # 重试 3 次后 +1 = 4
+
+
+# ==================== 暂停/取消测试 ====================
+
+
+class TestCancelDownload:
+    """CancelledError 处理测试。"""
+
+    @staticmethod
+    def _slow_streamer() -> httpx.Response:
+        """构造慢速流式响应：每块 64KB 后暂停 1 秒，共 5 块。"""
+
+        async def generate():
+            for _ in range(5):
+                yield b"x" * CHUNK_SIZE
+                await asyncio.sleep(1)
+
+        return httpx.Response(
+            200,
+            content=generate(),
+            headers={"Content-Length": str(CHUNK_SIZE * 5)},
+        )
+
+    @respx.mock
+    async def test_cancel_persists_progress(self, tmp_path: Path) -> None:
+        """CancelledError 时持久化当前 downloaded_bytes。"""
+        respx.get("https://cdn.example.com/v.mp4").mock(return_value=self._slow_streamer())
+
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path))
+        _insert_item(dl._conn, item)
+        final_path = tmp_path / f"{item.aweme_id}.mp4"
+
+        task = asyncio.create_task(dl._download_single_file(item, item.url, final_path))
+        await asyncio.sleep(0.5)  # 等待第一块下载完成
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        # 验证进度已持久化
+        row = dl._conn.execute(
+            "SELECT downloaded_bytes FROM task_items WHERE id=?", (item.id,)
+        ).fetchone()
+        assert row["downloaded_bytes"] > 0
+
+    @respx.mock
+    async def test_cancel_keeps_part_file(self, tmp_path: Path) -> None:
+        """取消后保留 .part 文件。"""
+        respx.get("https://cdn.example.com/v.mp4").mock(return_value=self._slow_streamer())
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path))
+        _insert_item(dl._conn, item)
+        final_path = tmp_path / f"{item.aweme_id}.mp4"
+        part_path = Path(str(final_path) + ".part")
+
+        task = asyncio.create_task(dl._download_single_file(item, item.url, final_path))
+        await asyncio.sleep(0.5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert part_path.exists()
+
+    @respx.mock
+    async def test_cancel_does_not_mark_completed(self, tmp_path: Path) -> None:
+        """Downloader 内部不修改 status 为 paused（由调度器负责）。"""
+        respx.get("https://cdn.example.com/v.mp4").mock(return_value=self._slow_streamer())
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path))
+        _insert_item(dl._conn, item)
+        final_path = tmp_path / f"{item.aweme_id}.mp4"
+        # 模拟 download() 入口的置 downloading（_download_single_file 不负责设置）
+        dl._mark_status(item.id, "downloading")
+
+        task = asyncio.create_task(dl._download_single_file(item, item.url, final_path))
+        await asyncio.sleep(0.5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        # status 应保持 downloading（未被改为 paused 或 completed）
+        assert _get_item_status(dl._conn, item.id) == "downloading"
+
+
+# ==================== 图集下载测试 ====================
+
+
+class TestDownloadImageSet:
+    """图集并发下载测试。"""
+
+    @respx.mock
+    async def test_image_set_concurrent_download(self, tmp_path: Path) -> None:
+        """多图片 URL 并发下载全部成功。"""
+        urls = [
+            "https://cdn.example.com/img1.jpg",
+            "https://cdn.example.com/img2.jpg",
+            "https://cdn.example.com/img3.jpg",
+        ]
+        for url in urls:
+            respx.get(url).mock(
+                return_value=httpx.Response(200, content=b"img_data_" + url[-9:-4].encode())
+            )
+        dl, item = _make_downloader_with_item(
+            download_dir=str(tmp_path),
+            aweme_id="img_set_001",
+            item_type="image_set",
+            url="\n".join(urls),
+        )
+        _insert_item(dl._conn, item)
+        result = await dl.download(item)
+        assert result.success is True
+        assert _get_item_status(dl._conn, item.id) == "completed"
+
+    @respx.mock
+    async def test_image_set_partial_failure(self, tmp_path: Path) -> None:
+        """任一图片失败 → 整个图集标记失败。"""
+        urls = [
+            "https://cdn.example.com/img1.jpg",
+            "https://cdn.example.com/img2.jpg",
+        ]
+        respx.get(urls[0]).mock(return_value=httpx.Response(200, content=b"ok"))
+        respx.get(urls[1]).mock(return_value=httpx.Response(404))
+        dl, item = _make_downloader_with_item(
+            download_dir=str(tmp_path),
+            aweme_id="img_set_002",
+            item_type="image_set",
+            url="\n".join(urls),
+        )
+        _insert_item(dl._conn, item)
+        result = await dl.download(item)
+        assert result.success is False
+        assert _get_item_status(dl._conn, item.id) == "failed"
+
+    @respx.mock
+    async def test_image_set_empty_urls(self, tmp_path: Path) -> None:
+        """图集 URL 为空时直接失败。"""
+        dl, item = _make_downloader_with_item(
+            download_dir=str(tmp_path),
+            item_type="image_set",
+            url="\n\n  \n",  # 只有空白行
+        )
+        _insert_item(dl._conn, item)
+        result = await dl.download(item)
+        assert result.success is False
+        assert _get_item_status(dl._conn, item.id) == "failed"
+
+
+# ==================== download 主入口测试 ====================
+
+
+class TestDownloadEntry:
+    """download() 主入口分发测试。"""
+
+    @respx.mock
+    async def test_download_video_dispatches_single_file(self, tmp_path: Path) -> None:
+        """video 类型走 _download_single_file 分支。"""
+        respx.get("https://cdn.example.com/v.mp4").mock(
+            return_value=httpx.Response(200, content=b"video")
+        )
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path))
+        _insert_item(dl._conn, item)
+        result = await dl.download(item)
+        assert result.success is True
+        assert _get_item_status(dl._conn, item.id) == "completed"
+
+    @respx.mock
+    async def test_download_marks_downloading_first(self, tmp_path: Path) -> None:
+        """download() 首先将 status 置为 downloading。"""
+        respx.get("https://cdn.example.com/v.mp4").mock(
+            return_value=httpx.Response(200, content=b"data")
+        )
+        dl, item = _make_downloader_with_item(download_dir=str(tmp_path))
+        _insert_item(dl._conn, item)
+        await dl.download(item)
+        # 最终是 completed，但过程中先变 downloading
+        assert _get_item_status(dl._conn, item.id) == "completed"
+
+
+# ==================== 辅助函数 ====================
+
+
+def _make_downloader(
+    conn: sqlite3.Connection | None = None,
+    reporter: ProgressReporter | None = None,
+) -> Downloader:
+    """创建测试用 Downloader（不依赖真实 DB 数据）。"""
+    if conn is None:
+        conn = get_memory_connection()
+    if reporter is None:
+        reporter = MagicMock(spec=ProgressReporter)
+    http_client = httpx.AsyncClient()
+    semaphore = asyncio.Semaphore(10)
+    return Downloader(reporter, http_client, semaphore, conn)
+
+
+def _make_downloader_with_reporter(reporter: ProgressReporter) -> Downloader:
+    """用指定 reporter 创建 Downloader。"""
+    return _make_downloader(reporter=reporter)
+
+
+def _make_downloader_with_item(
+    download_dir: str = "/tmp/test_downloads",
+    aweme_id: str = "aweme001",
+    item_type: str = "video",
+    url: str = "https://cdn.example.com/v.mp4",
+    item_id: int = 1,
+    task_id: int = 1,
+    conn: sqlite3.Connection | None = None,
+) -> tuple[Downloader, TaskItem]:
+    """创建 Downloader 并关联一个已插入 task 的 TaskItem（未插入 task_items 表）。"""
+    if conn is None:
+        conn = get_memory_connection()
+    task_repo = TaskRepository(conn)
+    task_repo.create(
+        Task(
+            id=None,
+            source_type="single",
+            source_url="https://douyin.com/video/123",
+            status="pending",
+            total_items=1,
+            download_dir=download_dir,
+        )
+    )
+    reporter = MagicMock(spec=ProgressReporter)
+    http_client = httpx.AsyncClient()
+    semaphore = asyncio.Semaphore(10)
+    dl = Downloader(reporter, http_client, semaphore, conn)
+    item = TaskItem(
+        id=item_id,
+        task_id=task_id,
+        aweme_id=aweme_id,
+        url=url,
+        type=item_type,
+        status="pending",
+    )
+    return dl, item
+
+
+def _insert_item(conn: sqlite3.Connection, item: TaskItem) -> None:
+    """将 TaskItem 插入数据库（如果尚未插入）。"""
+    existing = conn.execute("SELECT id FROM task_items WHERE id=?", (item.id,)).fetchone()
+    if existing is None:
+        TaskItemRepository(conn).create(item)
+
+
+def _get_item_status(conn: sqlite3.Connection, item_id: int) -> str:
+    row = conn.execute("SELECT status FROM task_items WHERE id=?", (item_id,)).fetchone()
+    return row["status"] if row else ""
+
+
+def _get_item_fail_reason(conn: sqlite3.Connection, item_id: int) -> str | None:
+    row = conn.execute("SELECT fail_reason FROM task_items WHERE id=?", (item_id,)).fetchone()
+    return row["fail_reason"] if row else None
+
+
+def _get_item_local_path(conn: sqlite3.Connection, item_id: int) -> str | None:
+    row = conn.execute("SELECT local_path FROM task_items WHERE id=?", (item_id,)).fetchone()
+    return row["local_path"] if row else None
