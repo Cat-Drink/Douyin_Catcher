@@ -36,6 +36,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -43,9 +44,11 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -53,7 +56,9 @@ from PySide6.QtWidgets import (
 )
 
 from app.logger import get_logger
+from app.models import Cookie
 from app.repositories import ConfigRepository, CookieRepository
+from crawlers.cookie_tester import CookieTester, CookieTestResult
 
 if TYPE_CHECKING:
     from ui.error_handler import ErrorHandler
@@ -99,6 +104,7 @@ class OnboardingPage(QWidget):
         config_repo: ConfigRepository,
         cookie_repo: CookieRepository,
         async_worker: AsyncWorker,
+        cookie_tester: CookieTester,
         main_window: MainWindow,
         error_handler: ErrorHandler,
         parent: QWidget | None = None,
@@ -109,6 +115,7 @@ class OnboardingPage(QWidget):
             config_repo: 配置仓库（读写引导状态）。
             cookie_repo: Cookie 仓库（Cookie 步骤查询已有 Cookie）。
             async_worker: 异步工作线程（Cookie 测试异步调用）。
+            cookie_tester: Cookie 测试器（异步测试 Cookie 有效性）。
             main_window: 主窗口（引导完成后跳转主界面）。
             error_handler: 错误处理器（Cookie 测试失败错误处理）。
             parent: 父控件。
@@ -117,6 +124,7 @@ class OnboardingPage(QWidget):
         self._config_repo = config_repo
         self._cookie_repo = cookie_repo
         self._async_worker = async_worker
+        self._cookie_tester = cookie_tester
         self._main_window = main_window
         self._error_handler = error_handler
         self._current_step = 0
@@ -189,7 +197,7 @@ class OnboardingPage(QWidget):
         """创建 4 个步骤子页面。
 
         步骤 0 用 WelcomeStep（任务 2），步骤 1 用 DirectoryStep（任务 3），
-        步骤 2-3 仍用占位（任务 4-5 替换）。
+        步骤 2 用 CookieStep（任务 4），步骤 3 仍用占位（任务 5 替换）。
         """
         assert self._stacked is not None
 
@@ -203,17 +211,29 @@ class OnboardingPage(QWidget):
         self._steps.append(directory)
         self._stacked.addWidget(directory)
 
-        # 步骤 2-3：占位（任务 4-5 逐步替换）
-        for i in range(2, _TOTAL_STEPS):
-            placeholder = QWidget()
-            label = QLabel(f"步骤 {i + 1}（待实现）")
-            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            label.setStyleSheet("font-size: 20px; color: #6B7280;")
-            ph_layout = QVBoxLayout(placeholder)
-            ph_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            ph_layout.addWidget(label)
-            self._steps.append(placeholder)
-            self._stacked.addWidget(placeholder)
+        # 步骤 2：Cookie 配置页（任务 4 已实现）
+        cookie = CookieStep(
+            self._cookie_repo,
+            self._async_worker,
+            self._cookie_tester,
+            self._error_handler,
+        )
+        cookie.cookie_valid.connect(lambda: self.set_cookie_valid(True))
+        cookie.cookie_test_started.connect(lambda: logger.info("Cookie 测试开始"))
+        cookie.cookie_test_finished.connect(lambda: logger.info("Cookie 测试结束"))
+        self._steps.append(cookie)
+        self._stacked.addWidget(cookie)
+
+        # 步骤 3：占位（任务 5 替换为 CompleteStep）
+        placeholder = QWidget()
+        label = QLabel("步骤 4（待实现）")
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setStyleSheet("font-size: 20px; color: #6B7280;")
+        ph_layout = QVBoxLayout(placeholder)
+        ph_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ph_layout.addWidget(label)
+        self._steps.append(placeholder)
+        self._stacked.addWidget(placeholder)
 
         self._update_step_indicator()
         self._update_nav_buttons()
@@ -590,3 +610,329 @@ class DirectoryStep(QWidget):
     def save_data(self) -> None:
         """供 OnboardingPage._save_current_step_data 调用。"""
         self.save_directory()
+
+
+# === Cookie 配置引导页（任务 4） ===
+
+# 简版教程步骤（3 步，与完整版 7 步区分）
+_BRIEF_TUTORIAL_STEPS: list[str] = [
+    "1. 浏览器打开 douyin.com 并登录",
+    "2. 按 F12 打开开发者工具 → Network",
+    "3. 刷新页面，点任意请求，复制 Request Headers 里的 Cookie 值",
+]
+
+
+class CookieStep(QWidget):
+    """Cookie 配置引导页步骤（步骤 2）。
+
+    引导用户添加第一个 Cookie 并测试通过，支持查看完整教程、
+    允许跳过（提示后续可配置）。
+
+    信号:
+        cookie_valid: Cookie 测试通过并保存，OnboardingPage 据此启用"完成"按钮。
+        cookie_test_started: 开始测试 Cookie（用于显示 Loading）。
+        cookie_test_finished: 测试结束（无论成功失败，用于隐藏 Loading）。
+    """
+
+    cookie_valid = Signal()
+    cookie_test_started = Signal()
+    cookie_test_finished = Signal()
+
+    # 内部信号：异步测试结果从工作线程回传到 UI 线程
+    _test_result_ready = Signal(object)  # CookieTestResult
+
+    def __init__(
+        self,
+        cookie_repo: CookieRepository,
+        async_worker: AsyncWorker,
+        cookie_tester: CookieTester,
+        error_handler: ErrorHandler,
+        parent: QWidget | None = None,
+    ) -> None:
+        """初始化 Cookie 配置引导页。
+
+        Args:
+            cookie_repo: Cookie 仓库（保存测试通过的 Cookie）。
+            async_worker: 异步工作线程（异步测试 Cookie）。
+            cookie_tester: Cookie 测试器（调用 test_cookie 验证有效性）。
+            error_handler: 错误处理器（输入校验错误展示）。
+            parent: 父控件。
+        """
+        super().__init__(parent)
+        self._cookie_repo = cookie_repo
+        self._async_worker = async_worker
+        self._cookie_tester = cookie_tester
+        self._error_handler = error_handler
+        self._testing = False
+        self._cookie_edit: QPlainTextEdit | None = None
+        self._label_edit: QLineEdit | None = None
+        self._test_btn: QPushButton | None = None
+        self._result_label: QLabel | None = None
+        self._tutorial_container: QFrame | None = None
+        self._tutorial_btn: QPushButton | None = None
+        self._setup_ui()
+        self._connect_signals()
+
+    def _setup_ui(self) -> None:
+        """构建 Cookie 配置引导页布局。"""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 32, 24, 32)
+        layout.setSpacing(12)
+
+        # 步骤标题
+        title = QLabel("步骤 2：配置 Cookie")
+        title.setStyleSheet("font-size: 20px; font-weight: 600;")
+        layout.addWidget(title)
+
+        # 说明文字
+        desc = QLabel("抖音需要登录态才能访问视频数据，请按教程获取 Cookie。")
+        desc.setStyleSheet("font-size: 14px; color: #6B7280;")
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+
+        # 简版教程卡片
+        tutorial_card = QFrame()
+        tutorial_card.setStyleSheet(
+            "QFrame { background-color: #F9FAFB;"
+            " border: 1px solid #E5E7EB; border-radius: 8px; }"
+        )
+        card_layout = QVBoxLayout(tutorial_card)
+        card_layout.setContentsMargins(16, 12, 16, 12)
+        card_layout.setSpacing(6)
+
+        card_title = QLabel("Cookie 获取教程（简版）")
+        card_title.setStyleSheet("font-size: 14px; font-weight: 500;")
+        card_layout.addWidget(card_title)
+
+        for step_text in _BRIEF_TUTORIAL_STEPS:
+            step_label = QLabel(step_text)
+            step_label.setStyleSheet("font-size: 13px; color: #374151;")
+            step_label.setWordWrap(True)
+            card_layout.addWidget(step_label)
+
+        # 查看详细教程链接
+        self._tutorial_btn = QPushButton("查看详细教程 ▼")
+        self._tutorial_btn.setObjectName("textBtn")
+        self._tutorial_btn.clicked.connect(self._toggle_tutorial)
+        card_layout.addWidget(self._tutorial_btn)
+
+        layout.addWidget(tutorial_card)
+
+        # 完整教程区（可折叠，默认隐藏）
+        self._tutorial_container = self._create_full_tutorial()
+        self._tutorial_container.setVisible(False)
+        layout.addWidget(self._tutorial_container)
+
+        # Cookie 内容标签
+        content_label = QLabel("Cookie 内容")
+        content_label.setStyleSheet("font-size: 13px; font-weight: 500;")
+        layout.addWidget(content_label)
+
+        # Cookie 文本框
+        self._cookie_edit = QPlainTextEdit()
+        self._cookie_edit.setFixedHeight(120)
+        self._cookie_edit.setPlaceholderText("在此粘贴 Cookie 字符串...")
+        layout.addWidget(self._cookie_edit)
+
+        # 标签
+        label_label = QLabel("标签")
+        label_label.setStyleSheet("font-size: 13px; font-weight: 500;")
+        layout.addWidget(label_label)
+
+        self._label_edit = QLineEdit()
+        self._label_edit.setPlaceholderText("如：账号1")
+        self._label_edit.setText("账号1")
+        layout.addWidget(self._label_edit)
+
+        # 添加并测试按钮
+        self._test_btn = QPushButton("添加并测试")
+        self._test_btn.setObjectName("primaryBtn")
+        self._test_btn.clicked.connect(self._on_test_clicked)
+        layout.addWidget(self._test_btn)
+
+        # 测试结果反馈区（默认隐藏）
+        self._result_label = QLabel()
+        self._result_label.setVisible(False)
+        layout.addWidget(self._result_label)
+
+        layout.addStretch(1)
+
+    def _create_full_tutorial(self) -> QFrame:
+        """创建完整教程区（7 步，复用 CookiePage 的教程数据）。"""
+        from ui.pages.cookie_page import _TUTORIAL_STEPS
+
+        widget = QFrame()
+        widget.setStyleSheet(
+            "QFrame { background-color: #F9FAFB;"
+            " border: 1px solid #E5E7EB; border-radius: 8px; }"
+        )
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(12)
+
+        full_title = QLabel("Cookie 获取教程（完整版）")
+        full_title.setStyleSheet("font-size: 14px; font-weight: 600;")
+        layout.addWidget(full_title)
+
+        for step_title, step_desc in _TUTORIAL_STEPS:
+            step_layout = QVBoxLayout()
+            step_layout.setSpacing(4)
+            t_label = QLabel(step_title)
+            t_label.setStyleSheet("font-size: 13px; font-weight: 500;")
+            step_layout.addWidget(t_label)
+            d_label = QLabel(step_desc)
+            d_label.setStyleSheet("color: #6B7280; font-size: 12px;")
+            d_label.setWordWrap(True)
+            step_layout.addWidget(d_label)
+            layout.addLayout(step_layout)
+
+        return widget
+
+    def _connect_signals(self) -> None:
+        """连接内部信号。"""
+        self._test_result_ready.connect(self._on_test_result)
+
+    def _toggle_tutorial(self) -> None:
+        """展开/收起完整教程区。"""
+        assert self._tutorial_container is not None
+        assert self._tutorial_btn is not None
+        visible = self._tutorial_container.isVisible()
+        self._tutorial_container.setVisible(not visible)
+        self._tutorial_btn.setText("查看详细教程 ▲" if not visible else "查看详细教程 ▼")
+
+    def _validate_input(self, content: str) -> tuple[bool, str]:
+        """校验 Cookie 内容非空、长度合理。
+
+        Args:
+            content: Cookie 内容字符串。
+
+        Returns:
+            (是否有效, 错误原因) 元组。
+        """
+        if not content:
+            return False, "请输入 Cookie 内容"
+        if len(content) < 20:
+            return False, "Cookie 内容过短，请确认已完整复制"
+        return True, ""
+
+    def _on_test_clicked(self) -> None:
+        """点击"添加并测试"：校验输入 → 发 cookie_test_started → 异步测试。"""
+        assert self._cookie_edit is not None
+        assert self._label_edit is not None
+        assert self._test_btn is not None
+
+        content = self._cookie_edit.toPlainText().strip()
+        label = self._label_edit.text().strip() or "账号1"
+
+        valid, reason = self._validate_input(content)
+        if not valid:
+            self._error_handler.show_input_error(self._cookie_edit, reason)
+            return
+        self._error_handler.clear_input_error(self._cookie_edit)
+
+        self._testing = True
+        self._test_btn.setEnabled(False)
+        self._test_btn.setText("测试中...")
+        self._hide_result()
+        self.cookie_test_started.emit()
+        logger.info("开始异步测试 Cookie，label=%s", label)
+
+        future = self._async_worker.submit(self._cookie_tester.test_cookie(content))
+        future.add_done_callback(self._on_future_done)
+
+    def _on_future_done(self, future: concurrent.futures.Future) -> None:
+        """工作线程回调：提取结果后通过信号回传到 UI 线程。
+
+        Args:
+            future: concurrent.futures.Future，持有 CookieTestResult。
+        """
+        try:
+            result = future.result()
+        except Exception as e:
+            logger.exception("Cookie 测试异常")
+            result = CookieTestResult(is_valid=False, error_message=str(e), user_nickname=None)
+        self._test_result_ready.emit(result)
+
+    def _on_test_result(self, result: CookieTestResult) -> None:
+        """UI 线程：处理测试结果。
+
+        成功则保存 Cookie + 发 cookie_valid；失败则显示原因。
+
+        Args:
+            result: Cookie 测试结果。
+        """
+        assert self._test_btn is not None
+        assert self._cookie_edit is not None
+        assert self._label_edit is not None
+
+        self._testing = False
+        self._test_btn.setEnabled(True)
+        self._test_btn.setText("添加并测试")
+
+        if result.is_valid:
+            content = self._cookie_edit.toPlainText().strip()
+            label = self._label_edit.text().strip() or "账号1"
+            self._save_cookie(content, label)
+            self._show_success(result.user_nickname)
+            self.cookie_valid.emit()
+        else:
+            self._show_failure(result.error_message)
+
+        self.cookie_test_finished.emit()
+
+    def _save_cookie(self, content: str, label: str) -> int:
+        """保存 Cookie 到 cookies 表。
+
+        Args:
+            content: Cookie 内容。
+            label: Cookie 标签。
+
+        Returns:
+            新建的 cookie_id。
+        """
+        cookie = Cookie(
+            id=None,
+            content=content,
+            label=label,
+            status="valid",
+        )
+        cookie_id = self._cookie_repo.add(cookie)
+        logger.info("Cookie 已保存，id=%s, label=%s", cookie_id, label)
+        return cookie_id
+
+    def _show_success(self, nickname: str | None) -> None:
+        """显示成功反馈。
+
+        Args:
+            nickname: 用户昵称（可选）。
+        """
+        assert self._result_label is not None
+        msg = "Cookie 有效，可以开始使用"
+        if nickname:
+            msg = f"Cookie 有效（账号：{nickname}），可以开始使用"
+        self._result_label.setText(f"✓ {msg}")
+        self._result_label.setStyleSheet("font-size: 14px; color: #10B981;")
+        self._result_label.setVisible(True)
+
+    def _show_failure(self, reason: str) -> None:
+        """显示失败反馈。
+
+        Args:
+            reason: 失败原因。
+        """
+        assert self._result_label is not None
+        self._result_label.setText(f"✖ 测试失败：{reason}，请重新输入")
+        self._result_label.setStyleSheet("font-size: 14px; color: #EF4444;")
+        self._result_label.setVisible(True)
+
+    def _hide_result(self) -> None:
+        """隐藏测试结果反馈区。"""
+        assert self._result_label is not None
+        self._result_label.setVisible(False)
+
+    def save_data(self) -> None:
+        """供 OnboardingPage._save_current_step_data 调用。
+
+        Cookie 在测试通过时已保存，此处无需重复保存。
+        """
+        pass
