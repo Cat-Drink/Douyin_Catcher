@@ -36,6 +36,7 @@ from app.logger import get_logger
 from app.models import Cookie
 from app.repositories import CookieRepository
 from ui.widgets.cookie_item_widget import CookieItemWidget
+from ui.widgets.toast import Toast
 from worker.crawler_bridge import CrawlerBridge
 
 logger = get_logger(__name__)
@@ -379,6 +380,11 @@ class CookiePage(QWidget):
         if widget is not None:
             widget.set_test_result(is_valid, message)
             self._update_status_bar()
+        # Toast 反馈测试结果
+        if is_valid:
+            Toast.show_success(self, "Cookie 测试通过")
+        else:
+            Toast.show_warning(self, f"Cookie 测试失败：{message}")
 
     def set_cookie_testing(self, cookie_id: int) -> None:
         """设置某 Cookie 为测试中状态。
