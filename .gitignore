@@ -17,8 +17,7 @@ env/
 
 # 敏感文件（测试 Cookie，绝不提交）
 .env
-.test_cookie.txt
-.test_cookie_*.txt
+.test_*.txt
 _verify_signer_live.py
 _compare_xbogus.py
 .ref_xbogus.py

@@ -34,6 +34,7 @@ _COOKIE_PATH = _PROJECT_ROOT / ".test_cookie.txt"
 _SEC_USER_ID_PATH = _PROJECT_ROOT / ".test_sec_user_id.txt"
 _AWEME_ID_PATH = _PROJECT_ROOT / ".test_aweme_id.txt"
 _IMAGE_SET_AWEME_ID_PATH = _PROJECT_ROOT / ".test_image_set_aweme_id.txt"
+_LONG_VIDEO_AWEME_ID_PATH = _PROJECT_ROOT / ".test_long_video_aweme_id.txt"
 
 # 标记所有端到端测试为 integration（CI 默认跳过）
 pytestmark = pytest.mark.integration
@@ -95,6 +96,18 @@ def real_image_set_aweme_id() -> str:
     return aweme_id
 
 
+@pytest.fixture(scope="session")
+def real_long_video_aweme_id() -> str:
+    """返回真实 aweme_id（长视频），未配置时跳过。
+
+    用于长视频下载测试，从 .test_long_video_aweme_id.txt 读取。
+    """
+    aweme_id = _read_text_file(_LONG_VIDEO_AWEME_ID_PATH)
+    if aweme_id is None:
+        pytest.skip("未找到 .test_long_video_aweme_id.txt，长视频测试跳过")
+    return aweme_id
+
+
 @pytest.fixture
 def tmp_download_dir(tmp_path: Path) -> Path:
     """返回临时下载目录，测试后自动清理。
@@ -129,6 +142,7 @@ def cleanup_cookie_traces() -> None:
     - .test_sec_user_id.txt
     - .test_aweme_id.txt
     - .test_image_set_aweme_id.txt
+    - .test_long_video_aweme_id.txt
     """
     yield
     # session 结束后清理 Cookie 文件
@@ -137,6 +151,7 @@ def cleanup_cookie_traces() -> None:
         _SEC_USER_ID_PATH,
         _AWEME_ID_PATH,
         _IMAGE_SET_AWEME_ID_PATH,
+        _LONG_VIDEO_AWEME_ID_PATH,
     ):
         if path.exists():
             path.unlink()
