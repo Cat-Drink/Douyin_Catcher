@@ -357,7 +357,7 @@ class FetchPage(QWidget):
 
         config_repo = ConfigRepository(self._conn)
         download_dir = config_repo.get("download_dir")
-        if download_dir and not self._dir_edit.text():
+        if isinstance(download_dir, str) and download_dir and not self._dir_edit.text():
             self._dir_edit.setText(download_dir)
 
     def _on_import_file(self) -> None:
