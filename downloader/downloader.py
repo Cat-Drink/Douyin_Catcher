@@ -337,6 +337,7 @@ class Downloader:
         task_item: TaskItem,
         url: str,
         final_path: Path,
+        mark_status: bool = True,
     ) -> DownloadResult:
         """单文件下载（视频/长视频/图集单张）。
 
@@ -346,6 +347,8 @@ class Downloader:
             task_item: 任务项
             url: 下载直链
             final_path: 最终文件路径
+            mark_status: 是否在完成/失败时标记 task_items 状态。
+                图集子下载设为 False，由 _download_image_set 统一标记。
 
         Returns:
             下载结果
@@ -376,7 +379,8 @@ class Downloader:
                             self._item_repo.update_retry(task_item.id, retry_count)
                             if retry_count > MAX_RETRY_COUNT:
                                 reason = f"HTTP {response.status_code} 重试耗尽"
-                                self._mark_status(task_item.id, "failed", fail_reason=reason)
+                                if mark_status:
+                                    self._mark_status(task_item.id, "failed", fail_reason=reason)
                                 return DownloadResult(success=False, error=reason)
                             logger.warning(
                                 "HTTP %d，第 %d 次重试 task_item id=%s",
@@ -389,7 +393,8 @@ class Downloader:
                         else:
                             # 不可重试错误（4xx 非限流）
                             reason = f"HTTP {response.status_code}"
-                            self._mark_status(task_item.id, "failed", fail_reason=reason)
+                            if mark_status:
+                                self._mark_status(task_item.id, "failed", fail_reason=reason)
                             return DownloadResult(success=False, error=reason)
 
                         # 流式接收
@@ -405,7 +410,8 @@ class Downloader:
 
                     # 下载完成 → 重命名 → 标记完成
                     final_str = self._finalize_file(part_path, final_path)
-                    self._mark_status(task_item.id, "completed", local_path=final_str)
+                    if mark_status:
+                        self._mark_status(task_item.id, "completed", local_path=final_str)
                     logger.info("下载完成 task_item id=%s path=%s", task_item.id, final_str)
                     return DownloadResult(success=True, local_path=final_str)
 
@@ -426,7 +432,8 @@ class Downloader:
                     self._item_repo.update_retry(task_item.id, retry_count)
                     if retry_count > MAX_RETRY_COUNT:
                         reason = f"网络异常重试耗尽: {e}"
-                        self._mark_status(task_item.id, "failed", fail_reason=reason)
+                        if mark_status:
+                            self._mark_status(task_item.id, "failed", fail_reason=reason)
                         return DownloadResult(success=False, error=reason)
                     logger.warning(
                         "网络异常 %s，第 %d 次重试 task_item id=%s",
@@ -491,3 +498,53 @@ class Downloader:
         # 最终持久化一次
         self._persist_progress(task_item.id, downloaded_bytes, total_bytes)
         return downloaded_bytes
+
+    async def _download_image_set(
+        self,
+        task_item: TaskItem,
+        urls: list[str],
+        target_dir: Path,
+    ) -> DownloadResult:
+        """图集并发下载（设计文档 5.2 节 + 2.4 节）。
+
+        对每个 URL 创建 _download_single_file 子任务，asyncio.gather 并发执行。
+        每个子任务受总 Semaphore 约束。任一失败 → 整个图集标记 failed。
+
+        Args:
+            task_item: 任务项
+            urls: 图片直链列表
+            target_dir: 图集目标目录
+
+        Returns:
+            下载结果（成功时 local_path 为目录路径）
+        """
+        logger.info(
+            "图集下载 task_item id=%s 共 %d 张图片",
+            task_item.id,
+            len(urls),
+        )
+        tasks: list = []
+        for i, url in enumerate(urls, 1):
+            final_path = self._get_final_path(task_item, url, index=i)
+            final_path.parent.mkdir(parents=True, exist_ok=True)
+            tasks.append(self._download_single_file(task_item, url, final_path, mark_status=False))
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # 检查结果：任一失败 → 整个图集失败
+        for i, result in enumerate(results):
+            if isinstance(result, BaseException):
+                if not isinstance(result, asyncio.CancelledError):
+                    reason = f"图片 {i + 1} 下载异常: {result}"
+                    self._mark_status(task_item.id, "failed", fail_reason=reason)
+                    return DownloadResult(success=False, error=reason)
+                raise result
+            if not result.success:
+                reason = f"图片 {i + 1} 下载失败: {result.error}"
+                self._mark_status(task_item.id, "failed", fail_reason=reason)
+                return DownloadResult(success=False, error=reason)
+
+        # 全部成功
+        self._mark_status(task_item.id, "completed", local_path=str(target_dir))
+        logger.info("图集下载完成 task_item id=%s path=%s", task_item.id, target_dir)
+        return DownloadResult(success=True, local_path=str(target_dir))
