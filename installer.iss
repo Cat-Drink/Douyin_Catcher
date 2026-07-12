@@ -1,0 +1,99 @@
+; ==============================================================================
+; 抖音抓取器 Inno Setup 安装脚本
+;
+; 严格遵循规范文档 8.2 节与附录 E。
+; 生成 Windows 安装包：dist/DouyinCatcher_Setup_v0.1.0.exe
+;
+; 编译命令::
+;
+;     "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" installer.iss
+;
+; 前置条件::
+;   - PyInstaller 打包完成，dist/DouyinCatcher/ 目录存在
+;   - Inno Setup 6 已安装（含中文语言包）
+;   - assets/icon.ico 存在
+;
+; 关键设计::
+;   - 卸载只清理 {app}（Program Files），不清理 %APPDATA%/DouyinCatcher/（用户数据保留）
+;   - AppId 固定 GUID，发布后不可更改（影响升级识别）
+;   - 仅支持 Windows x64
+; ==============================================================================
+
+#define MyAppName "抖音抓取器"
+#define MyAppVersion "0.1.0"
+#define MyAppPublisher "DouyinCatcher Contributors"
+#define MyAppExeName "DouyinCatcher.exe"
+#define MyAppURL "https://github.com/Evil0ctal/Douyin_TikTok_Download_API"
+
+[Setup]
+; 应用信息
+AppName={#MyAppName}
+AppVersion={#MyAppVersion}
+AppVerName={#MyAppName} {#MyAppVersion}
+AppPublisher={#MyAppPublisher}
+AppPublisherURL={#MyAppURL}
+AppSupportURL={#MyAppURL}
+
+; AppId 固定 GUID，发布后不可更改（影响升级识别）
+AppId={{B8F3A2E1-7C4D-4E9F-A1B6-3D5E8F2C7A90}
+
+; 安装目录与开始菜单
+DefaultDirName={autopf}\DouyinCatcher
+DefaultGroupName={#MyAppName}
+
+; 卸载图标
+UninstallDisplayIcon={app}\{#MyAppExeName}
+
+; 输出配置
+OutputDir=dist
+OutputBaseFilename=DouyinCatcher_Setup_v0.1.0
+
+; 安装向导图标
+SetupIconFile=assets\icon.ico
+
+; 压缩
+Compression=lzma2
+SolidCompression=yes
+
+; 架构：仅 64 位
+ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed=x64
+
+; 权限：安装到 Program Files 需管理员
+PrivilegesRequired=admin
+
+; 现代风格向导
+WizardStyle=modern
+
+; 不显示选择程序组对话框（使用默认分组）
+DisableProgramGroupPage=yes
+
+[Languages]
+; 简体中文（默认）
+Name: "chinesesimp"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+; 英文（备选）
+Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Tasks]
+; 桌面快捷方式（默认不勾选，可选）
+Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加选项:"; Flags: unchecked
+
+[Files]
+; 打包目录下所有文件（递归）
+Source: "dist\DouyinCatcher\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+
+[Icons]
+; 开始菜单快捷方式
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+; 开始菜单卸载项
+Name: "{group}\卸载 {#MyAppName}"; Filename: "{uninstallexe}"
+; 桌面快捷方式（可选）
+Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+
+[Run]
+; 安装完成后可选启动应用
+Filename: "{app}\{#MyAppExeName}"; Description: "立即启动 {#MyAppName}"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+; 卸载时清理安装目录（不清理 %APPDATA%/DouyinCatcher/，用户数据保留）
+Type: filesandordirs; Name: "{app}"
