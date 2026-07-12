@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from ui.error_handler import ERROR_MAPPING, ErrorHandler, ErrorInfo
 from ui.main_window import MainWindow
 
-__all__ = ["MainWindow"]
+__all__ = ["MainWindow", "ErrorHandler", "ErrorInfo", "ERROR_MAPPING"]
