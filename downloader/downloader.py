@@ -417,12 +417,14 @@ class Downloader:
 
                 except asyncio.CancelledError:
                     # 暂停/取消：持久化进度，保留 .part 文件，不修改 status（归 Scheduler）
+                    # _stream_to_file 可能已持久化更准确的值，此处读 .part 实际大小兜底
+                    actual_bytes = part_path.stat().st_size if part_path.exists() else 0
                     total = total_bytes if "total_bytes" in locals() else 0
-                    self._persist_progress(task_item.id, downloaded_bytes, total)
+                    self._persist_progress(task_item.id, actual_bytes, total)
                     logger.info(
                         "下载被取消 task_item id=%s 已保存进度 %d bytes",
                         task_item.id,
-                        downloaded_bytes,
+                        actual_bytes,
                     )
                     raise
 
@@ -469,9 +471,12 @@ class Downloader:
         """
         last_persist_time = time.monotonic()
         last_persist_bytes = downloaded_bytes
+        # downloaded_bytes == 0 表示从头下载（新文件或服务端返回 200 不支持 Range）
+        # → 用 "wb" 截断旧 .part 内容；否则 "ab" 续传追加。
+        mode = "wb" if downloaded_bytes == 0 else "ab"
 
         try:
-            with open(part_path, "ab") as f:
+            with open(part_path, mode) as f:
                 async for chunk in response.aiter_bytes(CHUNK_SIZE):
                     f.write(chunk)
                     downloaded_bytes += len(chunk)
