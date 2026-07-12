@@ -22,10 +22,13 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 
 from app.logger import get_logger
+from app.models import TaskItem, now_iso
 from app.repositories import TaskItemRepository, TaskRepository
 from downloader.progress_reporter import ProgressReporter
 
@@ -98,3 +101,196 @@ class Downloader:
         self._conn = conn
         self._item_repo = TaskItemRepository(conn)
         self._task_repo = TaskRepository(conn)
+
+    # === 路径推导 ===
+
+    def _get_download_dir(self, task_item: TaskItem) -> Path:
+        """查询 task_item 所属 task 的 download_dir。
+
+        Args:
+            task_item: 任务项
+
+        Returns:
+            下载目录 Path
+
+        Raises:
+            ValueError: task 不存在或 download_dir 为空
+        """
+        task = self._task_repo.get(task_item.task_id)
+        if task is None or not task.download_dir:
+            raise ValueError(f"task_id={task_item.task_id} 的 download_dir 为空或 task 不存在")
+        return Path(task.download_dir)
+
+    def _get_final_path(self, task_item: TaskItem, url: str, index: int | None = None) -> Path:
+        """推导最终文件路径。
+
+        - video / long_video: ``{download_dir}/{aweme_id}.{ext}``
+        - image_set: ``{download_dir}/{aweme_id}/{aweme_id}_{index}.{ext}``
+
+        Args:
+            task_item: 任务项
+            url: 下载直链（用于提取扩展名）
+            index: 图集图片序号（从 1 开始），仅 image_set 使用
+
+        Returns:
+            最终文件路径
+        """
+        download_dir = self._get_download_dir(task_item)
+        ext = self._extract_extension(url, task_item.type)
+        aweme_id = task_item.aweme_id or f"item_{task_item.id}"
+        if task_item.type == "image_set" and index is not None:
+            target_dir = download_dir / aweme_id
+            return target_dir / f"{aweme_id}_{index}{ext}"
+        return download_dir / f"{aweme_id}{ext}"
+
+    def _get_part_path(self, final_path: Path) -> Path:
+        """推导 .part 临时文件路径。
+
+        在最终文件名后追加 ``.part`` 后缀。
+
+        Args:
+            final_path: 最终文件路径
+
+        Returns:
+            .part 临时文件路径
+        """
+        return Path(str(final_path) + ".part")
+
+    @staticmethod
+    def _extract_extension(url: str, item_type: str) -> str:
+        """从 URL 提取文件扩展名。
+
+        从 URL path 部分提取扩展名，无法识别时按类型给默认值。
+
+        Args:
+            url: 下载直链
+            item_type: 任务项类型
+
+        Returns:
+            文件扩展名（含点号，如 ``.mp4``）
+        """
+        parsed = urlparse(url)
+        suffix = Path(parsed.path).suffix.lower()
+        if suffix and len(suffix) <= 5:
+            return suffix
+        # 默认扩展名
+        if item_type == "image_set":
+            return ".jpg"
+        return ".mp4"
+
+    # === 状态持久化 ===
+
+    def _persist_progress(
+        self,
+        task_item_id: int,
+        downloaded_bytes: int,
+        total_bytes: int,
+    ) -> None:
+        """持久化下载进度到 SQLite。
+
+        更新 ``task_items.downloaded_bytes``、``total_bytes``、``updated_at``。
+
+        Args:
+            task_item_id: 任务项 ID
+            downloaded_bytes: 已下载字节数
+            total_bytes: 文件总字节数
+        """
+        self._item_repo.update_bytes(task_item_id, downloaded_bytes, total_bytes)
+
+    def _mark_status(
+        self,
+        task_item_id: int,
+        status: str,
+        fail_reason: str | None = None,
+        local_path: str | None = None,
+    ) -> None:
+        """更新 task_items 状态及关联字段。
+
+        Args:
+            task_item_id: 任务项 ID
+            status: 新状态
+            fail_reason: 失败原因（仅 failed 时使用）
+            local_path: 本地文件路径（仅 completed 时使用）
+        """
+        now = now_iso()
+        with self._conn:
+            if fail_reason is not None and local_path is not None:
+                self._conn.execute(
+                    "UPDATE task_items SET status=?, fail_reason=?, "
+                    "local_path=?, updated_at=? WHERE id=?",
+                    (status, fail_reason, local_path, now, task_item_id),
+                )
+            elif fail_reason is not None:
+                self._conn.execute(
+                    "UPDATE task_items SET status=?, fail_reason=?, updated_at=? WHERE id=?",
+                    (status, fail_reason, now, task_item_id),
+                )
+            elif local_path is not None:
+                self._conn.execute(
+                    "UPDATE task_items SET status=?, local_path=?, updated_at=? WHERE id=?",
+                    (status, local_path, now, task_item_id),
+                )
+            else:
+                self._conn.execute(
+                    "UPDATE task_items SET status=?, updated_at=? WHERE id=?",
+                    (status, now, task_item_id),
+                )
+
+    # === 重试判断 ===
+
+    def _should_retry(self, status_code: int | None, exception: Exception | None) -> bool:
+        """判断是否应重试（设计文档 5.3 节）。
+
+        - 网络异常（httpx.HTTPError 子类）→ True
+        - HTTP 5xx → True
+        - HTTP 461 / 412（风控限流）→ True
+        - HTTP 4xx（非 461/412）→ False
+        - HTTP 200/206 → 不进入重试逻辑（调用方保证）
+
+        Args:
+            status_code: HTTP 状态码，网络异常时为 None
+            exception: 捕获的异常，HTTP 状态码错误时为 None
+
+        Returns:
+            是否应重试
+        """
+        if exception is not None:
+            # httpx 网络异常（ConnectError、ReadTimeout、PoolTimeout 等）
+            return isinstance(exception, httpx.HTTPError)
+        if status_code is not None:
+            if 500 <= status_code <= 599:
+                return True
+            if status_code in RATE_LIMITED_STATUS_CODES:
+                return True
+            if 400 <= status_code <= 499:
+                return False
+        return False
+
+    async def _retry_with_backoff(self, retry_count: int) -> None:
+        """指数退避等待 ``2^retry_count`` 秒（2s/4s/8s）。
+
+        Args:
+            retry_count: 当前重试次数（从 1 开始）
+        """
+        wait_seconds = RETRY_BACKOFF_BASE**retry_count
+        logger.info("等待 %d 秒后重试（第 %d 次）", wait_seconds, retry_count)
+        await asyncio.sleep(wait_seconds)
+
+    # === 文件操作 ===
+
+    def _finalize_file(self, part_path: Path, final_path: Path) -> str:
+        """将 .part 文件重命名为最终文件名。
+
+        若最终文件已存在则先删除（覆盖旧文件）。
+
+        Args:
+            part_path: .part 临时文件路径
+            final_path: 最终文件路径
+
+        Returns:
+            最终文件路径字符串
+        """
+        if final_path.exists():
+            final_path.unlink()
+        part_path.rename(final_path)
+        return str(final_path)
