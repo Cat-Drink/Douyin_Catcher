@@ -95,6 +95,7 @@ class NavBar(QWidget):
         # 导航项按钮组（互斥选中）
         self._button_group = QButtonGroup(self)
         self._button_group.setExclusive(True)
+        self._button_group.idClicked.connect(self._on_item_clicked)
         for item in NAV_ITEMS:
             self._add_nav_item(item)
 
@@ -121,7 +122,6 @@ class NavBar(QWidget):
         button.setProperty("page_index", item.page_index)
         assert self._button_group is not None
         self._button_group.addButton(button)
-        self._button_group.idClicked.connect(self._on_item_clicked)
         self._nav_buttons.append(button)
         layout = self.layout()
         if layout is not None:

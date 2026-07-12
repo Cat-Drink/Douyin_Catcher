@@ -30,12 +30,16 @@ v0.0.7 职责边界：
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from PySide6.QtWidgets import QWidget
 
 from app.logger import get_logger
-from ui.main_window import MainWindow
 from worker.crawler_bridge import CrawlerBridge
 from worker.download_bridge import DownloadBridge
+
+if TYPE_CHECKING:
+    from ui.main_window import MainWindow
 
 logger = get_logger(__name__)
 

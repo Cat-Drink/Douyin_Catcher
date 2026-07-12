@@ -42,6 +42,7 @@ source = ["app", "crawlers", "downloader", "worker"]
 omit = [
     "tests/*",
     "ui/*",
+    "main.py",
     "crawlers/__init__.py",
 ]
 
