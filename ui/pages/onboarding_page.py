@@ -42,8 +42,10 @@ from typing import TYPE_CHECKING
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
+    QFileDialog,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -186,7 +188,8 @@ class OnboardingPage(QWidget):
     def _setup_steps(self) -> None:
         """创建 4 个步骤子页面。
 
-        步骤 0 用 WelcomeStep（任务 2），步骤 1-3 仍用占位（任务 3-5 替换）。
+        步骤 0 用 WelcomeStep（任务 2），步骤 1 用 DirectoryStep（任务 3），
+        步骤 2-3 仍用占位（任务 4-5 替换）。
         """
         assert self._stacked is not None
 
@@ -195,8 +198,13 @@ class OnboardingPage(QWidget):
         self._steps.append(welcome)
         self._stacked.addWidget(welcome)
 
-        # 步骤 1-3：占位（任务 3-5 逐步替换）
-        for i in range(1, _TOTAL_STEPS):
+        # 步骤 1：目录设置页（任务 3 已实现）
+        directory = DirectoryStep(self._config_repo)
+        self._steps.append(directory)
+        self._stacked.addWidget(directory)
+
+        # 步骤 2-3：占位（任务 4-5 逐步替换）
+        for i in range(2, _TOTAL_STEPS):
             placeholder = QWidget()
             label = QLabel(f"步骤 {i + 1}（待实现）")
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -420,3 +428,165 @@ class WelcomeStep(QWidget):
             feature_label = QLabel(f"• {line}")
             feature_label.setStyleSheet("font-size: 14px; color: #6B7280;")
             layout.addWidget(feature_label)
+
+
+class DirectoryStep(QWidget):
+    """下载目录设置页步骤（步骤 1）。
+
+    引导用户选择下载文件保存位置，默认 ``%USERPROFILE%/Downloads/DouyinCatcher``，
+    可修改，并校验目录可读性。
+
+    信号:
+        directory_valid: 目录校验通过，参数为目录路径。
+        directory_invalid: 目录校验失败，参数为错误原因。
+    """
+
+    directory_valid = Signal(str)
+    directory_invalid = Signal(str)
+
+    def __init__(
+        self,
+        config_repo: ConfigRepository,
+        parent: QWidget | None = None,
+    ) -> None:
+        """初始化目录设置页。
+
+        Args:
+            config_repo: 配置仓库（读写下载目录到 config 表）。
+            parent: 父控件。
+        """
+        super().__init__(parent)
+        self._config_repo = config_repo
+        self._dir_edit: QLineEdit | None = None
+        self._error_label: QLabel | None = None
+        self._setup_ui()
+        self._load_default_directory()
+
+    def _setup_ui(self) -> None:
+        """构建目录设置页布局。"""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 32, 24, 32)
+        layout.setSpacing(12)
+
+        # 步骤标题
+        title = QLabel("步骤 1：设置下载目录")
+        title.setStyleSheet("font-size: 20px; font-weight: 600;")
+        layout.addWidget(title)
+
+        # 说明文字
+        desc = QLabel("选择视频文件保存的位置，建议使用默认目录。")
+        desc.setStyleSheet("font-size: 14px; color: #6B7280;")
+        layout.addWidget(desc)
+
+        # 目录输入框 + 浏览按钮
+        dir_row = QHBoxLayout()
+        dir_row.setSpacing(8)
+        self._dir_edit = QLineEdit()
+        self._dir_edit.setPlaceholderText("选择下载目录...")
+        self._dir_edit.textChanged.connect(self._on_directory_changed)
+        dir_row.addWidget(self._dir_edit, 1)
+
+        browse_btn = QPushButton("浏览...")
+        browse_btn.clicked.connect(self._on_browse_clicked)
+        dir_row.addWidget(browse_btn)
+        layout.addLayout(dir_row)
+
+        # 提示信息
+        hint = QLabel("默认目录为系统下载文件夹下的 DouyinCatcher 子文件夹，" "可随时在设置中修改")
+        hint.setStyleSheet("font-size: 12px; color: #3B82F6;")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        # 错误提示（默认隐藏）
+        self._error_label = QLabel()
+        self._error_label.setStyleSheet("font-size: 12px; color: #EF4444;")
+        self._error_label.setVisible(False)
+        layout.addWidget(self._error_label)
+
+        layout.addStretch(1)
+
+    def _load_default_directory(self) -> str:
+        """返回默认目录：优先读 config 表 download_dir，无值则用 DEFAULT_DOWNLOAD_DIR。
+
+        Returns:
+            默认目录路径。
+        """
+        from app.config import DEFAULT_DOWNLOAD_DIR
+
+        download_dir = self._config_repo.get("download_dir")
+        if not download_dir:
+            download_dir = str(DEFAULT_DOWNLOAD_DIR)
+        assert self._dir_edit is not None
+        self._dir_edit.setText(download_dir)
+        return download_dir
+
+    def _on_browse_clicked(self) -> None:
+        """点击浏览按钮：弹出 QFileDialog，用户选择后更新输入框并触发校验。"""
+        assert self._dir_edit is not None
+        dir_path = QFileDialog.getExistingDirectory(self, "选择下载目录")
+        if dir_path:
+            self._dir_edit.setText(dir_path)
+
+    def _validate_directory(self, path: str) -> tuple[bool, str]:
+        """校验目录可读性。
+
+        校验步骤：
+            1. 路径非空检查
+            2. 目录创建检查（mkdir parents=True, exist_ok=True）
+            3. 写入权限检查（创建临时文件并删除）
+
+        Args:
+            path: 目录路径。
+
+        Returns:
+            (是否有效, 错误原因) 元组。
+        """
+        if not path:
+            return False, "请选择下载目录"
+        try:
+            Path(path).mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return False, "目录无法创建，请选择其他位置"
+        # 写入权限检查
+        try:
+            test_file = Path(path) / ".douyin_catcher_test"
+            test_file.write_text("test", encoding="utf-8")
+            test_file.unlink()
+        except OSError:
+            return False, "目录无写入权限，请选择其他位置"
+        return True, ""
+
+    def _on_directory_changed(self, path: str) -> None:
+        """目录输入变化时触发校验。
+
+        Args:
+            path: 当前输入的目录路径。
+        """
+        valid, reason = self._validate_directory(path)
+        assert self._dir_edit is not None
+        assert self._error_label is not None
+        if valid:
+            self._dir_edit.setStyleSheet("")
+            self._error_label.setVisible(False)
+            self.directory_valid.emit(path)
+        else:
+            self._dir_edit.setStyleSheet("border: 1px solid #EF4444;")
+            self._error_label.setText(f"⚠ {reason}")
+            self._error_label.setVisible(True)
+            self.directory_invalid.emit(reason)
+
+    def save_directory(self) -> None:
+        """保存目录到 config 表（ConfigRepository.set("download_dir", path)）。"""
+        path = self.get_directory()
+        if path:
+            self._config_repo.set("download_dir", path)
+            logger.info("下载目录已保存: %s", path)
+
+    def get_directory(self) -> str:
+        """返回当前输入框中的目录路径。"""
+        assert self._dir_edit is not None
+        return self._dir_edit.text().strip()
+
+    def save_data(self) -> None:
+        """供 OnboardingPage._save_current_step_data 调用。"""
+        self.save_directory()
