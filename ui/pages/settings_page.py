@@ -66,7 +66,7 @@ _CHUNK_OPTIONS: list[tuple[str, str]] = [
 ]
 
 # 应用版本与开源仓库
-_APP_VERSION = "v0.0.9"
+_APP_VERSION = "v0.1.0"
 _REPO_URL = "https://github.com/Evil0ctal/Douyin_TikTok_Download_API"
 
 

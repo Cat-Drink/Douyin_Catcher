@@ -1,6 +1,6 @@
 [project]
 name = "douyin-catcher"
-version = "0.0.1"
+version = "0.1.0"
 description = "抖音短视频（含图文、长视频）数据抓取的 Windows 桌面端应用"
 authors = [{ name = "DouyinCatcher Contributors" }]
 license = { text = "MIT" }
