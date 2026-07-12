@@ -125,7 +125,7 @@ class Scheduler:
             await asyncio.gather(*self._tasks.values(), return_exceptions=True)
         self._tasks.clear()
         # 停止进度汇报
-        self._progress_reporter.stop()
+        await self._progress_reporter.stop()
         # 关闭内部创建的 httpx 客户端
         if self._owns_http_client:
             await self._http_client.aclose()
