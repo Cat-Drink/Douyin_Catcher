@@ -38,11 +38,10 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["app", "crawlers"]
+source = ["app", "crawlers", "downloader"]
 omit = [
     "tests/*",
     "ui/*",
-    "downloader/*",
     "worker/*",
     "crawlers/__init__.py",
 ]
