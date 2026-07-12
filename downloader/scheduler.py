@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import sqlite3
 from collections.abc import Callable
 
@@ -222,3 +223,89 @@ class Scheduler:
         self._semaphore = asyncio.Semaphore(new_value)
         self._downloader._semaphore = self._semaphore
         logger.info("并发数调整为 %d", new_value)
+
+    # === 暂停/恢复（设计文档 5.4 节）===
+
+    async def pause(self, task_item_id: int) -> None:
+        """暂停指定任务项。
+
+        取消对应的 ``asyncio.Task``（触发 ``CancelledError``），
+        Downloader 内部持久化进度后重抛，调度器将 status 置为 ``paused``。
+
+        Args:
+            task_item_id: 任务项 ID
+        """
+        task = self._tasks.get(task_item_id)
+        if task is not None and not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            self._tasks.pop(task_item_id, None)
+        self._item_repo.update_status(task_item_id, "paused")
+        logger.info("已暂停 task_item id=%s", task_item_id)
+
+    async def resume(self, task_item_id: int) -> None:
+        """恢复指定任务项。
+
+        从 ``paused`` → 重新创建 ``asyncio.Task``，
+        Downloader 检测 ``.part`` 文件后走 Range 续传。
+
+        Args:
+            task_item_id: 任务项 ID
+        """
+        item = self._item_repo.get(task_item_id)
+        if item is None:
+            logger.warning("恢复失败：task_item id=%s 不存在", task_item_id)
+            return
+        if item.status != "paused":
+            logger.warning(
+                "恢复失败：task_item id=%s 状态为 %s（非 paused）",
+                task_item_id,
+                item.status,
+            )
+            return
+        # 重新创建下载任务（Downloader.download 内部会置 downloading）
+        task = asyncio.create_task(self._run_download(item))
+        self._tasks[task_item_id] = task
+        task.add_done_callback(lambda t, tid=task_item_id: self._tasks.pop(tid, None))
+        logger.info("已恢复 task_item id=%s", task_item_id)
+
+    async def pause_all(self) -> None:
+        """暂停所有进行中的下载任务。"""
+        ids = list(self._tasks.keys())
+        for tid in ids:
+            await self.pause(tid)
+        logger.info("已暂停全部 %d 个任务", len(ids))
+
+    async def resume_all(self) -> None:
+        """恢复所有 paused 状态的任务项。"""
+        paused_items = self._item_repo.get_by_status("paused")
+        for item in paused_items:
+            if item.id is not None and item.id not in self._tasks:
+                await self.resume(item.id)
+        logger.info("已恢复 %d 个 paused 任务", len(paused_items))
+
+    # === 启动恢复（设计文档 4.2 节）===
+
+    async def restore_pending_tasks(self) -> None:
+        """应用启动时恢复未完成的下载任务。
+
+        流程（设计文档 4.2 节第 1 点）：
+        1. 将所有 ``downloading`` 状态重置为 ``paused``（上次中断了）
+        2. 查询所有 ``pending`` 和 ``paused`` 的任务项
+        3. 加入待下载队列（``paused`` 项恢复时走 Range 续传）
+        """
+        reset_count = self._item_repo.reset_downloading_to_paused()
+        if reset_count > 0:
+            logger.info("启动恢复：将 %d 个 downloading 重置为 paused", reset_count)
+        pending = self._item_repo.get_by_status("pending")
+        paused = self._item_repo.get_by_status("paused")
+        items = pending + paused
+        if items:
+            self.add_task_items(items)
+            logger.info(
+                "启动恢复：加入队列 %d 项（pending=%d, paused=%d）",
+                len(items),
+                len(pending),
+                len(paused),
+            )
