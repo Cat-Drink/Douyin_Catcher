@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
@@ -294,3 +295,199 @@ class Downloader:
             final_path.unlink()
         part_path.rename(final_path)
         return str(final_path)
+
+    # === 下载主流程 ===
+
+    async def download(self, task_item: TaskItem) -> DownloadResult:
+        """单项下载主入口（设计文档 5.2 节）。
+
+        根据 type 分发到单文件或图集下载流程。
+        image_set 类型的 url 字段以换行符分隔多个图片 URL。
+
+        Args:
+            task_item: 待下载任务项
+
+        Returns:
+            下载结果
+        """
+        self._mark_status(task_item.id, "downloading")
+        logger.info(
+            "开始下载 task_item id=%s aweme_id=%s type=%s",
+            task_item.id,
+            task_item.aweme_id,
+            task_item.type,
+        )
+
+        if task_item.type == "image_set":
+            urls = [u.strip() for u in task_item.url.split("\n") if u.strip()]
+            if not urls:
+                self._mark_status(task_item.id, "failed", fail_reason="图集 URL 为空")
+                return DownloadResult(success=False, error="图集 URL 为空")
+            final_path = self._get_final_path(task_item, urls[0], index=1)
+            target_dir = final_path.parent
+            target_dir.mkdir(parents=True, exist_ok=True)
+            return await self._download_image_set(task_item, urls, target_dir)
+
+        final_path = self._get_final_path(task_item, task_item.url)
+        final_path.parent.mkdir(parents=True, exist_ok=True)
+        return await self._download_single_file(task_item, task_item.url, final_path)
+
+    async def _download_single_file(
+        self,
+        task_item: TaskItem,
+        url: str,
+        final_path: Path,
+    ) -> DownloadResult:
+        """单文件下载（视频/长视频/图集单张）。
+
+        含 Range 续传、流式写入、重试。受总 Semaphore 约束。
+
+        Args:
+            task_item: 任务项
+            url: 下载直链
+            final_path: 最终文件路径
+
+        Returns:
+            下载结果
+        """
+        part_path = self._get_part_path(final_path)
+        retry_count = task_item.retry_count
+
+        async with self._semaphore:
+            while True:
+                # 检查 .part 文件是否存在 → 读取已下载字节数（断点续传）
+                downloaded_bytes = part_path.stat().st_size if part_path.exists() else 0
+
+                # 构造 Range 请求头
+                headers: dict[str, str] = {}
+                if downloaded_bytes > 0:
+                    headers["Range"] = f"bytes={downloaded_bytes}-"
+
+                try:
+                    async with self._http_client.stream("GET", url, headers=headers) as response:
+                        if response.status_code == 200:
+                            # 服务端不支持 Range 或文件已变，从头下载
+                            downloaded_bytes = 0
+                        elif response.status_code == 206:
+                            pass  # 续传成功
+                        elif self._should_retry(response.status_code, None):
+                            # 可重试错误（5xx / 461 / 412）
+                            retry_count += 1
+                            self._item_repo.update_retry(task_item.id, retry_count)
+                            if retry_count > MAX_RETRY_COUNT:
+                                reason = f"HTTP {response.status_code} 重试耗尽"
+                                self._mark_status(task_item.id, "failed", fail_reason=reason)
+                                return DownloadResult(success=False, error=reason)
+                            logger.warning(
+                                "HTTP %d，第 %d 次重试 task_item id=%s",
+                                response.status_code,
+                                retry_count,
+                                task_item.id,
+                            )
+                            await self._retry_with_backoff(retry_count)
+                            continue
+                        else:
+                            # 不可重试错误（4xx 非限流）
+                            reason = f"HTTP {response.status_code}"
+                            self._mark_status(task_item.id, "failed", fail_reason=reason)
+                            return DownloadResult(success=False, error=reason)
+
+                        # 流式接收
+                        content_length = int(response.headers.get("Content-Length", 0))
+                        total_bytes = downloaded_bytes + content_length
+                        downloaded_bytes = await self._stream_to_file(
+                            response,
+                            part_path,
+                            task_item,
+                            downloaded_bytes,
+                            total_bytes,
+                        )
+
+                    # 下载完成 → 重命名 → 标记完成
+                    final_str = self._finalize_file(part_path, final_path)
+                    self._mark_status(task_item.id, "completed", local_path=final_str)
+                    logger.info("下载完成 task_item id=%s path=%s", task_item.id, final_str)
+                    return DownloadResult(success=True, local_path=final_str)
+
+                except asyncio.CancelledError:
+                    # 暂停/取消：持久化进度，保留 .part 文件，不修改 status（归 Scheduler）
+                    total = total_bytes if "total_bytes" in locals() else 0
+                    self._persist_progress(task_item.id, downloaded_bytes, total)
+                    logger.info(
+                        "下载被取消 task_item id=%s 已保存进度 %d bytes",
+                        task_item.id,
+                        downloaded_bytes,
+                    )
+                    raise
+
+                except httpx.HTTPError as e:
+                    # 网络异常 → 重试
+                    retry_count += 1
+                    self._item_repo.update_retry(task_item.id, retry_count)
+                    if retry_count > MAX_RETRY_COUNT:
+                        reason = f"网络异常重试耗尽: {e}"
+                        self._mark_status(task_item.id, "failed", fail_reason=reason)
+                        return DownloadResult(success=False, error=reason)
+                    logger.warning(
+                        "网络异常 %s，第 %d 次重试 task_item id=%s",
+                        e,
+                        retry_count,
+                        task_item.id,
+                    )
+                    await self._retry_with_backoff(retry_count)
+                    continue
+
+    async def _stream_to_file(
+        self,
+        response: httpx.Response,
+        part_path: Path,
+        task_item: TaskItem,
+        downloaded_bytes: int,
+        total_bytes: int,
+    ) -> int:
+        """流式接收响应体写入 .part 文件。
+
+        每块 64KB 追加写入、更新内存计数、每 5s/1MB 持久化、更新 ProgressReporter。
+        捕获 CancelledError 时持久化进度后重抛。
+
+        Args:
+            response: httpx 流式响应
+            part_path: .part 临时文件路径
+            task_item: 任务项
+            downloaded_bytes: 起始已下载字节数（断点续传）
+            total_bytes: 文件总字节数
+
+        Returns:
+            最终已下载字节数
+        """
+        last_persist_time = time.monotonic()
+        last_persist_bytes = downloaded_bytes
+
+        try:
+            with open(part_path, "ab") as f:
+                async for chunk in response.aiter_bytes(CHUNK_SIZE):
+                    f.write(chunk)
+                    downloaded_bytes += len(chunk)
+                    # 更新进度（节流器内部去重）
+                    self._progress_reporter.update(
+                        task_item.id,
+                        downloaded_bytes,
+                        total_bytes,
+                    )
+                    # 检查持久化条件：5 秒 或 1MB
+                    now = time.monotonic()
+                    if (
+                        now - last_persist_time >= PERSIST_INTERVAL_SECONDS
+                        or downloaded_bytes - last_persist_bytes >= PERSIST_INTERVAL_BYTES
+                    ):
+                        self._persist_progress(task_item.id, downloaded_bytes, total_bytes)
+                        last_persist_time = now
+                        last_persist_bytes = downloaded_bytes
+        except asyncio.CancelledError:
+            # 持久化进度后重抛（设计文档 5.4 节）
+            self._persist_progress(task_item.id, downloaded_bytes, total_bytes)
+            raise
+
+        # 最终持久化一次
+        self._persist_progress(task_item.id, downloaded_bytes, total_bytes)
+        return downloaded_bytes
