@@ -224,16 +224,10 @@ class OnboardingPage(QWidget):
         self._steps.append(cookie)
         self._stacked.addWidget(cookie)
 
-        # 步骤 3：占位（任务 5 替换为 CompleteStep）
-        placeholder = QWidget()
-        label = QLabel("步骤 4（待实现）")
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setStyleSheet("font-size: 20px; color: #6B7280;")
-        ph_layout = QVBoxLayout(placeholder)
-        ph_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        ph_layout.addWidget(label)
-        self._steps.append(placeholder)
-        self._stacked.addWidget(placeholder)
+        # 步骤 3：完成页（任务 5 已实现）
+        complete = CompleteStep(cookie_configured=True)
+        self._steps.append(complete)
+        self._stacked.addWidget(complete)
 
         self._update_step_indicator()
         self._update_nav_buttons()
@@ -258,6 +252,11 @@ class OnboardingPage(QWidget):
         self._current_step = step_index
         assert self._stacked is not None
         self._stacked.setCurrentIndex(step_index)
+        # 进入完成页时刷新 Cookie 配置状态
+        if step_index == 3:
+            complete_step = self._steps[3]
+            if isinstance(complete_step, CompleteStep):
+                complete_step.set_cookie_configured(self._check_cookie_configured())
         self._update_step_indicator()
         self._update_nav_buttons()
         logger.debug("切换到步骤 %s", step_index)
@@ -936,3 +935,84 @@ class CookieStep(QWidget):
         Cookie 在测试通过时已保存，此处无需重复保存。
         """
         pass
+
+
+# === 完成页（任务 5） ===
+
+
+class CompleteStep(QWidget):
+    """完成页步骤（步骤 3）。
+
+    展示"配置完成"信息，引导用户点击"开始使用"进入主界面。
+    按钮由 OnboardingPage 底部导航区统一管理，本类只负责内容区。
+
+    信号:
+        enter_app_clicked: 预留信号（OnboardingPage 底部"开始使用"按钮触发完成）。
+    """
+
+    enter_app_clicked = Signal()
+
+    def __init__(
+        self,
+        cookie_configured: bool = True,
+        parent: QWidget | None = None,
+    ) -> None:
+        """初始化完成页。
+
+        Args:
+            cookie_configured: 是否已配置 Cookie，用于决定是否显示 Cookie 未配置提示。
+            parent: 父控件。
+        """
+        super().__init__(parent)
+        self._cookie_configured = cookie_configured
+        self._warning_label: QLabel | None = None
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        """构建完成页布局（垂直居中）。"""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 48, 24, 48)
+        layout.setSpacing(16)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # 完成图标 64x64（绿色圆形 + 白色 ✓）
+        icon_label = QLabel("✓")
+        icon_label.setFixedSize(64, 64)
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setStyleSheet(
+            "background-color: #10B981; color: #FFFFFF;"
+            " border-radius: 32px; font-size: 32px; font-weight: bold;"
+        )
+        layout.addWidget(icon_label, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        # 完成标题
+        title_label = QLabel("配置完成！")
+        title_label.setStyleSheet("font-size: 24px; font-weight: 600;")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title_label)
+
+        # 说明文字
+        desc_label = QLabel('现在可以开始下载抖音视频了\n前往"链接抓取"页粘贴链接即可开始')
+        desc_label.setStyleSheet("font-size: 14px; color: #6B7280;")
+        desc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(desc_label)
+
+        # Cookie 未配置提示（条件显示）
+        self._warning_label = QLabel(
+            "⚠ Cookie 未配置，部分功能不可用，请稍后在 Cookie 配置页完成配置"
+        )
+        self._warning_label.setStyleSheet("font-size: 12px; color: #F59E0B;")
+        self._warning_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._warning_label.setWordWrap(True)
+        self._warning_label.setVisible(not self._cookie_configured)
+        layout.addWidget(self._warning_label)
+
+    def set_cookie_configured(self, configured: bool) -> None:
+        """更新 Cookie 配置状态，控制未配置提示的显隐。
+
+        Args:
+            configured: 是否已配置 Cookie。
+        """
+        self._cookie_configured = configured
+        if self._warning_label is not None:
+            self._warning_label.setVisible(not configured)
