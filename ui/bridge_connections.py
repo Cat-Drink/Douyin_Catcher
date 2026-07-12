@@ -33,7 +33,7 @@ UI 槽函数，并将页面信号转发到 Bridge 控制信号，建立 UI 与�
         FetchPage.download_requested(list,str) → 创建 Task/TaskItem + 启动下载
         CookiePage.add_cookie_requested(str,str)  → CookieRepository.add
         CookiePage.remove_cookie_requested(int)   → CookieRepository.remove
-        SettingsPage.export_logs_requested()      → 打开日志目录
+        SettingsPage.settings_changed(dict)       → 日志记录
 
     Bridge WorkerSignals → 本地处理（页面未处理的信号）:
         DownloadBridge.cookie_invalid(str) → 弹窗提示 + 切换到 Cookie 页
@@ -42,10 +42,8 @@ UI 槽函数，并将页面信号转发到 Bridge 控制信号，建立 UI 与�
 
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING
 
-from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QMessageBox, QWidget
 
 from app.logger import get_logger
@@ -171,19 +169,22 @@ class BridgeConnections:
         if page is None:
             return
         page.settings_changed.connect(self._on_settings_changed)
-        page.export_logs_requested.connect(self._on_export_logs)
 
     # === DownloadBridge WorkerSignals 槽函数 ===
 
     def _on_cookie_invalid(self, message: str) -> None:
-        """Cookie 失效通知：弹窗提示 + 切换到 Cookie 配置页。"""
+        """Cookie 失效通知：通过 ErrorHandler 弹窗 + 切换到 Cookie 配置页。"""
         logger.warning("Cookie 失效：%s", message)
-        QMessageBox.warning(
-            self._main_window,
-            "Cookie 失效",
-            f"{message}\n\n请前往 Cookie 配置页更新 Cookie。",
-            QMessageBox.StandardButton.Ok,
-        )
+        error_handler = self._main_window.error_handler
+        if error_handler is not None:
+            error_handler.handle_error("cookie_invalid", {"details": message})
+        else:
+            QMessageBox.warning(
+                self._main_window,
+                "Cookie 失效",
+                f"{message}\n\n请前往 Cookie 配置页更新 Cookie。",
+                QMessageBox.StandardButton.Ok,
+            )
         self._switch_page(2)
 
     def _on_task_completed(self, task_id: int) -> None:
@@ -290,20 +291,6 @@ class BridgeConnections:
     def _on_settings_changed(self, config: dict) -> None:
         """配置变更通知（配置已在页面中保存到 DB）。"""
         logger.debug("配置已变更: %s", config)
-
-    def _on_export_logs(self) -> None:
-        """打开日志目录。"""
-        base = os.environ.get("APPDATA", os.path.expanduser("~"))
-        log_dir = os.path.join(base, "DouyinCatcher", "logs")
-        if os.path.isdir(log_dir):
-            QDesktopServices.openUrl(log_dir)
-        else:
-            QMessageBox.information(
-                self._main_window,
-                "日志目录",
-                f"日志目录尚未创建：\n{log_dir}\n\n应用运行后将自动生成日志文件。",
-                QMessageBox.StandardButton.Ok,
-            )
 
     # === 辅助方法 ===
 
