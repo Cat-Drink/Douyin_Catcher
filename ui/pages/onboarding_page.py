@@ -36,9 +36,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -182,9 +184,19 @@ class OnboardingPage(QWidget):
         layout.addWidget(nav_widget)
 
     def _setup_steps(self) -> None:
-        """创建 4 个步骤子页面（任务 1 用占位，任务 2-5 替换）。"""
-        # 任务 1：占位步骤，任务 2-5 逐步替换
-        for i in range(_TOTAL_STEPS):
+        """创建 4 个步骤子页面。
+
+        步骤 0 用 WelcomeStep（任务 2），步骤 1-3 仍用占位（任务 3-5 替换）。
+        """
+        assert self._stacked is not None
+
+        # 步骤 0：欢迎页（任务 2 已实现）
+        welcome = WelcomeStep()
+        self._steps.append(welcome)
+        self._stacked.addWidget(welcome)
+
+        # 步骤 1-3：占位（任务 3-5 逐步替换）
+        for i in range(1, _TOTAL_STEPS):
             placeholder = QWidget()
             label = QLabel(f"步骤 {i + 1}（待实现）")
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -193,7 +205,6 @@ class OnboardingPage(QWidget):
             ph_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
             ph_layout.addWidget(label)
             self._steps.append(placeholder)
-            assert self._stacked is not None
             self._stacked.addWidget(placeholder)
 
         self._update_step_indicator()
@@ -323,3 +334,89 @@ class OnboardingPage(QWidget):
         """
         self._cookie_valid = valid
         self._update_nav_buttons()
+
+
+# === 应用图标路径（与 main.py 一致） ===
+_ICON_PATH = Path(__file__).parent.parent.parent / "assets" / "icon.ico"
+
+# 功能特性文案
+_FEATURE_LINES: list[str] = [
+    "下载抖音视频/图文/长视频",
+    "批量链接下载",
+    "用户主页批量抓取",
+    "断点续传",
+]
+
+
+class WelcomeStep(QWidget):
+    """欢迎页步骤（步骤 0）。
+
+    展示应用 Logo、名称、功能简介，引导用户点击"开始配置"进入下一步。
+    按钮由 OnboardingPage 底部导航区统一管理，本类只负责内容区。
+
+    信号:
+        start_clicked: 预留信号（OnboardingPage 底部"开始配置"按钮触发进入下一步）。
+    """
+
+    start_clicked = Signal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        """初始化欢迎页。
+
+        Args:
+            parent: 父控件。
+        """
+        super().__init__(parent)
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        """构建欢迎页布局（垂直居中）。"""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 48, 24, 48)
+        layout.setSpacing(16)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # 应用 Logo 128x128
+        logo_label = QLabel()
+        logo_label.setFixedSize(128, 128)
+        logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pixmap = QPixmap(str(_ICON_PATH))
+        if pixmap.isNull():
+            # Logo 加载失败：灰色占位块
+            logo_label.setStyleSheet("background-color: #E5E7EB; border-radius: 16px;")
+        else:
+            logo_label.setPixmap(
+                pixmap.scaled(
+                    128,
+                    128,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+        layout.addWidget(logo_label, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        # 应用名称
+        title_label = QLabel("欢迎使用抖音抓取器")
+        title_label.setStyleSheet("font-size: 24px; font-weight: 600;")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title_label)
+
+        # 副标题
+        subtitle_label = QLabel("一款让你轻松下载抖音视频的桌面工具")
+        subtitle_label.setStyleSheet("font-size: 14px; color: #6B7280;")
+        subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(subtitle_label)
+
+        # 间距
+        layout.addSpacing(16)
+
+        # 功能特性标题
+        features_title = QLabel("功能特性：")
+        features_title.setStyleSheet("font-size: 14px; font-weight: 500;")
+        layout.addWidget(features_title)
+
+        # 功能列表
+        for line in _FEATURE_LINES:
+            feature_label = QLabel(f"• {line}")
+            feature_label.setStyleSheet("font-size: 14px; color: #6B7280;")
+            layout.addWidget(feature_label)
