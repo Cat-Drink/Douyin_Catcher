@@ -54,7 +54,7 @@ logger = get_logger(__name__)
 
 # 窗口属性常量（规范 5.1 节）
 APP_NAME = "抖音抓取器"
-APP_VERSION = "v0.0.7"
+APP_VERSION = "v0.0.9"
 MIN_WINDOW_SIZE = (800, 600)
 DEFAULT_WINDOW_SIZE = (1280, 800)
 
