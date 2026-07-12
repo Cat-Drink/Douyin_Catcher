@@ -10,6 +10,7 @@ from ui.widgets.filter_bar import FilterBar
 from ui.widgets.nav_bar import NAV_ITEMS, NavBar, NavItem
 from ui.widgets.task_item_widget import TaskItemWidget
 from ui.widgets.thumbnail_loader import ThumbnailLoader
+from ui.widgets.toast import Toast
 
 __all__ = [
     "NAV_ITEMS",
@@ -19,4 +20,5 @@ __all__ = [
     "CookieItemWidget",
     "FilterBar",
     "ThumbnailLoader",
+    "Toast",
 ]
