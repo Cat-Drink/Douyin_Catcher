@@ -8,6 +8,13 @@ from __future__ import annotations
 from ui.pages.cookie_page import CookiePage
 from ui.pages.download_page import DownloadPage
 from ui.pages.fetch_page import FetchPage
+from ui.pages.onboarding_page import OnboardingPage
 from ui.pages.settings_page import SettingsPage
 
-__all__ = ["CookiePage", "DownloadPage", "FetchPage", "SettingsPage"]
+__all__ = [
+    "CookiePage",
+    "DownloadPage",
+    "FetchPage",
+    "OnboardingPage",
+    "SettingsPage",
+]
