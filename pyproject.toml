@@ -35,6 +35,7 @@ addopts = "--cov=. --cov-report=term-missing --cov-report=html --cov-fail-under=
 markers = [
     "signer: 签名算法模块测试（crawlers/signer/）",
     "integration: 集成测试（需真实 Cookie，CI 默认跳过）",
+    "slow: 耗时较长的性能测试（可选运行）",
 ]
 
 [tool.coverage.run]
