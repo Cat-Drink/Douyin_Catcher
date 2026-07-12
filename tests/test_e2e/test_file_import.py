@@ -15,7 +15,6 @@ from app.models import Task, TaskItem
 from app.repositories import CookieRepository, TaskItemRepository, TaskRepository
 from crawlers.http_client import HttpClient
 from crawlers.signer import Signer
-from crawlers.url_parser import URLParser
 from crawlers.video_parser import VideoParser
 from downloader.scheduler import Scheduler
 
@@ -32,7 +31,6 @@ async def test_file_import_download(
     cookie_repo = CookieRepository(clean_db)
     signer = Signer()
     http_client = HttpClient(cookie_repo, signer)
-    url_parser = URLParser(http_client)
     video_parser = VideoParser(http_client, signer)
 
     # 2. 创建临时 txt 文件（含链接、空行、注释行）

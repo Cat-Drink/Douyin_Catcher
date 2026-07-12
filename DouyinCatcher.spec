@@ -20,7 +20,7 @@ from pathlib import Path
 
 block_cipher = None
 
-# 项目根目录
+# 项目根目录（SPECPATH 由 PyInstaller 运行时注入）
 _PROJECT_ROOT = Path(SPECPATH)
 
 # 附加资源：(源路径, 目标路径)

@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import httpx
-import pytest
 
 from crawlers.signer import DEFAULT_USER_AGENT, Signer
 
@@ -85,9 +84,7 @@ async def test_signer_valid_against_real_api(real_cookie: str) -> None:
     # 3. 验证服务端接受签名
     assert resp.status_code == 200, f"HTTP {resp.status_code} - 签名可能被拒绝"
     data = resp.json()
-    assert data.get("status_code") == 0, (
-        f"签名验证失败: status_code={data.get('status_code')}"
-    )
+    assert data.get("status_code") == 0, f"签名验证失败: status_code={data.get('status_code')}"
 
     # 4. 验证返回有效数据
     aweme_detail = data.get("aweme_detail")

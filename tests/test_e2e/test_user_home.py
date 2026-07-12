@@ -45,9 +45,7 @@ async def test_user_home_crawl_and_download(
     # 3. 抓取作品列表（最多取前 3 个）
     filters = HomeFilters(type_filter="all", max_count=3)
     posts = []
-    async for post in user_home_crawler.fetch_user_posts(
-        real_sec_user_id, filters, real_cookie
-    ):
+    async for post in user_home_crawler.fetch_user_posts(real_sec_user_id, filters, real_cookie):
         posts.append(post)
         if len(posts) >= 3:
             break

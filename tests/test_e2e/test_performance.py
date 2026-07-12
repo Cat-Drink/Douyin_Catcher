@@ -77,7 +77,9 @@ async def test_concurrency_performance(tmp_path: Path) -> None:
         conn = get_memory_connection()
         task_id = _insert_task(conn, str(tmp_path), count=concurrency)
         items = [
-            _insert_item(conn, task_id, f"aweme_perf_{concurrency}_{i}", "https://cdn.example.com/v.mp4")
+            _insert_item(
+                conn, task_id, f"aweme_perf_{concurrency}_{i}", "https://cdn.example.com/v.mp4"
+            )
             for i in range(concurrency)
         ]
 
@@ -100,15 +102,11 @@ async def test_concurrency_performance(tmp_path: Path) -> None:
         conn.close()
 
         results.append((concurrency, elapsed))
-        # 验证全部完成
-        for item in items:
-            # 重新获取连接验证（conn 已关闭，这里仅验证不崩溃）
-            pass
 
     # 验证并发数越高，总耗时越短（或有边际递减）
     # 不设硬性阈值，仅验证无崩溃
     assert len(results) == 3
-    for concurrency, elapsed in results:
+    for _concurrency, elapsed in results:
         assert elapsed > 0
         assert elapsed < 120  # 120 秒内完成
 
@@ -191,7 +189,9 @@ async def test_memory_under_concurrent_load(tmp_path: Path) -> None:
         conn = get_memory_connection()
         task_id = _insert_task(conn, str(tmp_path), count=5)
         items = [
-            _insert_item(conn, task_id, f"aweme_mem_{round_num}_{i}", "https://cdn.example.com/v.mp4")
+            _insert_item(
+                conn, task_id, f"aweme_mem_{round_num}_{i}", "https://cdn.example.com/v.mp4"
+            )
             for i in range(5)
         ]
 
@@ -215,6 +215,4 @@ async def test_memory_under_concurrent_load(tmp_path: Path) -> None:
     memory_growth = final_memory - initial_memory
 
     # 内存增长应小于 100MB（无严重泄漏）
-    assert memory_growth < 100 * 1024 * 1024, (
-        f"内存增长过大: {memory_growth / 1024 / 1024:.1f}MB"
-    )
+    assert memory_growth < 100 * 1024 * 1024, f"内存增长过大: {memory_growth / 1024 / 1024:.1f}MB"

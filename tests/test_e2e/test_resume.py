@@ -79,9 +79,6 @@ async def test_resume_after_restart(
         if item.status == "downloading" and item.downloaded_bytes > 0:
             break
 
-    # 记录中断前的下载进度
-    interrupted_bytes = item.downloaded_bytes if item else 0
-
     # 5. 模拟应用关闭（停止 Scheduler）
     await scheduler1.stop()
 

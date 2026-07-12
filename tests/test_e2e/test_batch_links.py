@@ -15,7 +15,6 @@ from app.models import Task, TaskItem
 from app.repositories import CookieRepository, TaskItemRepository, TaskRepository
 from crawlers.http_client import HttpClient
 from crawlers.signer import Signer
-from crawlers.url_parser import URLParser
 from crawlers.video_parser import VideoParser
 from downloader.scheduler import Scheduler
 
@@ -31,7 +30,6 @@ async def test_batch_links_download(
     cookie_repo = CookieRepository(clean_db)
     signer = Signer()
     http_client = HttpClient(cookie_repo, signer)
-    url_parser = URLParser(http_client)
     video_parser = VideoParser(http_client, signer)
 
     # 2. 批量解析（使用同一 aweme_id 构造 2 个链接）
