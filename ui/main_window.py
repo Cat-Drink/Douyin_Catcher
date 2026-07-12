@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.logger import get_logger
+from ui.bridge_connections import BridgeConnections
 from ui.pages.cookie_page import CookiePage
 from ui.pages.download_page import DownloadPage
 from ui.pages.fetch_page import FetchPage
@@ -84,10 +85,13 @@ class MainWindow(QMainWindow):
         self._nav_bar: NavBar | None = None
         self._stacked_widget: QStackedWidget | None = None
         self._status_counts_label: QLabel | None = None
+        self._bridge_connections: BridgeConnections | None = None
+        self._pages: dict[str, QWidget] = {}
 
         self._setup_ui()
         self._setup_window()
         self._setup_status_bar()
+        self._setup_connections()
 
     def _setup_ui(self) -> None:
         """构建整体布局：导航栏 + 内容区。"""
@@ -113,6 +117,14 @@ class MainWindow(QMainWindow):
         self._stacked_widget.addWidget(settings_page)  # index 3
         layout.addWidget(self._stacked_widget, 1)
 
+        # 存储页面引用供 BridgeConnections 使用
+        self._pages = {
+            "download": download_page,
+            "fetch": fetch_page,
+            "cookie": cookie_page,
+            "settings": settings_page,
+        }
+
         self.setCentralWidget(central_widget)
 
         # 默认选中第一个导航项
@@ -136,6 +148,16 @@ class MainWindow(QMainWindow):
         version_label = QLabel(APP_VERSION)
         version_label.setObjectName("statusBarVersion")
         status_bar.addPermanentWidget(version_label)
+
+    def _setup_connections(self) -> None:
+        """创建 BridgeConnections 并连接所有 Bridge 信号。"""
+        self._bridge_connections = BridgeConnections(
+            main_window=self,
+            download_bridge=self._download_bridge,
+            crawler_bridge=self._crawler_bridge,
+            pages=self._pages,
+        )
+        self._bridge_connections.setup_connections()
 
     def _on_page_changed(self, index: int) -> None:
         """导航切换回调：切换 QStackedWidget 当前页，调用页面 refresh()。
