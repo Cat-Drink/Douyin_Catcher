@@ -89,3 +89,122 @@ class VideoParser:
         """
         self._http_client = http_client
         self._signer = signer
+
+    # === 私有辅助方法 ===
+
+    @staticmethod
+    def _detect_video_type(detail: dict) -> VideoType:
+        """根据响应数据判断作品类型。
+
+        判断顺序（先命中先返回，见计划文档 3.5 节）:
+            1. ``images`` 字段非空（列表长度 > 0） → ``'image_set'``
+            2. ``video.duration`` > 60000 毫秒（> 60 秒） → ``'long_video'``
+            3. 其他情况 → ``'video'``
+
+        参数:
+            detail: ``aweme_detail`` 节点。
+
+        返回:
+            ``'video'`` / ``'image_set'`` / ``'long_video'``。
+        """
+        images = detail.get("images")
+        if isinstance(images, list) and len(images) > 0:
+            return "image_set"
+        duration = detail.get("video", {}).get("duration", 0) or 0
+        if duration > 60000:
+            return "long_video"
+        return "video"
+
+    @staticmethod
+    def _format_duration(ms: int) -> str:
+        """毫秒转展示文本。
+
+        规则:
+            - < 60 秒 → ``'Xs'``（如 ``'15s'``）
+            - >= 60 秒 → ``'MM:SS'``（如 ``'12:30'``），小时以上仍按 MM:SS 展示
+              （如 1 小时 30 分 15 秒 → ``'90:15'``）
+
+        参数:
+            ms: 视频时长（毫秒）。
+
+        返回:
+            展示文本。
+        """
+        total_seconds = ms // 1000
+        if total_seconds < 60:
+            return f"{total_seconds}s"
+        minutes, seconds = divmod(total_seconds, 60)
+        return f"{minutes}:{seconds:02d}"
+
+    @staticmethod
+    def _extract_tags(detail: dict) -> list[str]:
+        """从 ``text_extra`` 提取标签名列表。
+
+        参数:
+            detail: ``aweme_detail`` 节点。
+
+        返回:
+            标签名列表（无标签时为空列表）。
+        """
+        text_extra = detail.get("text_extra")
+        if not isinstance(text_extra, list):
+            return []
+        tags: list[str] = []
+        for item in text_extra:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("hashtag_name")
+            if isinstance(name, str) and name:
+                tags.append(name)
+        return tags
+
+    @staticmethod
+    def _extract_no_watermark_url(detail: dict) -> str | None:
+        """提取视频无水印直链。
+
+        路径（见计划文档 3.4.1 节）:
+            - 主路径: ``video.play_addr.url_list[0]``
+            - 回退: 若 URL 含 ``playwm`` 子串，替换为 ``play`` 得无水印直链
+
+        参数:
+            detail: ``aweme_detail`` 节点。
+
+        返回:
+            无水印直链；列表为空时返回 None。
+        """
+        url_list = detail.get("video", {}).get("play_addr", {}).get("url_list")
+        if not isinstance(url_list, list) or not url_list:
+            return None
+        url = url_list[0]
+        if not isinstance(url, str) or not url:
+            return None
+        if "playwm" in url:
+            url = url.replace("playwm", "play")
+        return url
+
+    @staticmethod
+    def _extract_image_urls(detail: dict) -> list[str]:
+        """提取图集原图直链列表。
+
+        路径（见计划文档 3.4.2 节）: 遍历 ``images`` 数组，每项取 ``url_list[0]``。
+
+        参数:
+            detail: ``aweme_detail`` 节点。
+
+        返回:
+            图片 URL 列表（无图集时为空列表）。
+        """
+        images = detail.get("images")
+        if not isinstance(images, list):
+            return []
+        urls: list[str] = []
+        for img in images:
+            if not isinstance(img, dict):
+                continue
+            url_list = img.get("url_list")
+            if not isinstance(url_list, list) or not url_list:
+                continue
+            url = url_list[0]
+            if isinstance(url, str) and url:
+                urls.append(url)
+        return urls
