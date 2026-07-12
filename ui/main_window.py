@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import TYPE_CHECKING
 
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
@@ -45,6 +46,9 @@ from ui.pages.settings_page import SettingsPage
 from ui.widgets.nav_bar import NavBar
 from worker.crawler_bridge import CrawlerBridge
 from worker.download_bridge import DownloadBridge
+
+if TYPE_CHECKING:
+    from ui.error_handler import ErrorHandler
 
 logger = get_logger(__name__)
 
@@ -86,6 +90,7 @@ class MainWindow(QMainWindow):
         self._stacked_widget: QStackedWidget | None = None
         self._status_counts_label: QLabel | None = None
         self._bridge_connections: BridgeConnections | None = None
+        self._error_handler: ErrorHandler | None = None
         self._pages: dict[str, QWidget] = {}
 
         self._setup_ui()
@@ -187,6 +192,33 @@ class MainWindow(QMainWindow):
             return
         text = f"总数 {total} · 下载中 {downloading} · 已完成 {completed} · 失败 {failed}"
         self._status_counts_label.setText(text)
+
+    def set_error_handler(self, error_handler: ErrorHandler) -> None:
+        """注入 ErrorHandler 实例。
+
+        ErrorHandler 需要 MainWindow 引用，故在 MainWindow 构造后注入。
+
+        Args:
+            error_handler: 错误处理器实例。
+        """
+        self._error_handler = error_handler
+
+    @property
+    def error_handler(self) -> ErrorHandler | None:
+        """返回已注入的 ErrorHandler 实例（未注入时为 None）。"""
+        return self._error_handler
+
+    def goto_cookie_page(self) -> None:
+        """切换到 Cookie 配置页（导航索引 2）。"""
+        if self._nav_bar is not None:
+            self._nav_bar.set_current_page(2)
+            logger.debug("已跳转到 Cookie 配置页")
+
+    def goto_settings_page(self) -> None:
+        """切换到设置页（导航索引 3）。"""
+        if self._nav_bar is not None:
+            self._nav_bar.set_current_page(3)
+            logger.debug("已跳转到设置页")
 
     def closeEvent(self, event: QCloseEvent) -> None:
         """重写关闭事件：弹出确认退出对话框。

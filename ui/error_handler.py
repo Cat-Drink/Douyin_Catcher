@@ -467,15 +467,11 @@ class ErrorHandler(QObject):
 
     def _goto_cookie_page(self) -> None:
         """跳转 Cookie 配置页。"""
-        nav_bar = self._main_window._nav_bar  # noqa: SLF001
-        if nav_bar is not None:
-            nav_bar.set_current_page(2)
+        self._main_window.goto_cookie_page()
 
     def _goto_settings_page(self) -> None:
         """跳转设置页。"""
-        nav_bar = self._main_window._nav_bar  # noqa: SLF001
-        if nav_bar is not None:
-            nav_bar.set_current_page(3)
+        self._main_window.goto_settings_page()
 
     def _redownload(self, task_item_id: int) -> None:
         """重新加入下载队列。
