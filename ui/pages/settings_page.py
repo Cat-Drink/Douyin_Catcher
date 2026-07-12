@@ -21,7 +21,7 @@ from __future__ import annotations
 import os
 import sqlite3
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -38,8 +38,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.config import LOG_DIR
 from app.logger import get_logger
 from app.repositories import ConfigRepository
+from ui.widgets.toast import Toast
 
 logger = get_logger(__name__)
 
@@ -261,7 +263,7 @@ class SettingsPage(QWidget):
 
         export_row = QHBoxLayout()
         self._export_logs_btn = QPushButton("导出日志")
-        self._export_logs_btn.clicked.connect(self._on_export_logs)
+        self._export_logs_btn.clicked.connect(self._on_export_log_clicked)
         export_row.addWidget(self._export_logs_btn)
         export_row.addStretch(1)
         layout.addLayout(export_row)
@@ -396,9 +398,19 @@ class SettingsPage(QWidget):
         logger.debug("配置已保存: %s", config)
         self.settings_changed.emit(config)
 
-    def _on_export_logs(self) -> None:
-        """导出日志按钮点击。"""
-        self.export_logs_requested.emit()
+    def _on_export_log_clicked(self) -> None:
+        """导出日志按钮点击：打开日志目录。
+
+        使用 ``QDesktopServices.openUrl`` + ``QUrl.fromLocalFile`` 打开
+        ``app.config.LOG_DIR`` 目录。目录不存在时 Toast 提示"暂无日志文件"。
+        """
+        log_dir = str(LOG_DIR)
+        if os.path.isdir(log_dir):
+            QDesktopServices.openUrl(QUrl.fromLocalFile(log_dir))
+            logger.info("已打开日志目录: %s", log_dir)
+        else:
+            Toast.show_warning(self, "暂无日志文件")
+            logger.warning("日志目录不存在: %s", log_dir)
 
     def _on_open_repo(self) -> None:
         """打开开源仓库链接。"""
