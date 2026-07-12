@@ -397,6 +397,7 @@ class SettingsPage(QWidget):
 
         logger.debug("配置已保存: %s", config)
         self.settings_changed.emit(config)
+        Toast.show_success(self, "设置已保存")
 
     def _on_export_log_clicked(self) -> None:
         """导出日志按钮点击：打开日志目录。
