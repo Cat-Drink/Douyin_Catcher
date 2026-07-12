@@ -1,8 +1,8 @@
 """抖音抓取器应用入口。
 
 负责应用启动流程：日志初始化、目录确保、QApplication 创建、QSS 加载、
-数据库初始化、AsyncWorker 与 Bridge 初始化、断点续传恢复、引导/主窗口显示、
-退出清理。
+数据库初始化、AsyncWorker 与 Bridge 初始化、断点续传恢复、ErrorHandler 初始化、
+全局异常捕获、引导/主窗口显示、退出清理。
 
 严格遵循设计文档第 2.3 节（线程模型）与第 7.4 节（首次引导）。
 
@@ -17,8 +17,10 @@
       ├─ async_worker = AsyncWorker(); start()
       ├─ download_bridge, crawler_bridge = _create_bridges(conn, async_worker)
       ├─ download_bridge.restore_pending_tasks()
+      ├─ MainWindow + ErrorHandler + sys.excepthook 初始化
       ├─ ConfigRepository.get_onboarding_done() 判断
-      ├─ MainWindow.show() 或引导占位
+      ├─ onboarding_done → MainWindow.show()
+      │  否则 → OnboardingPage.start() → 完成后 → MainWindow.show()
       ├─ exit_code = app.exec()
       └─ _cleanup(async_worker, conn)
 """
@@ -28,6 +30,7 @@ from __future__ import annotations
 import contextlib
 import sqlite3
 import sys
+import traceback
 from pathlib import Path
 
 from PySide6.QtGui import QIcon
@@ -47,7 +50,10 @@ from crawlers.signer import Signer
 from crawlers.url_parser import URLParser
 from crawlers.user_home_crawler import UserHomeCrawler
 from downloader.scheduler import Scheduler
+from ui.error_handler import ErrorHandler
 from ui.main_window import APP_VERSION, MainWindow
+from ui.pages.onboarding_page import OnboardingPage
+from ui.widgets.toast import Toast
 from worker.async_worker import AsyncWorker
 from worker.crawler_bridge import CrawlerBridge
 from worker.download_bridge import DownloadBridge
@@ -148,6 +154,51 @@ def _cleanup(async_worker: AsyncWorker, conn: sqlite3.Connection) -> None:
     logger.info("应用退出清理完成")
 
 
+def _install_excepthook(error_handler: ErrorHandler) -> None:
+    """安装全局异常捕获钩子。
+
+    捕获未处理的 Python 异常，记录完整栈到日志，并通过 ErrorHandler
+    弹窗提示用户"未知错误"（含复制详情按钮）。
+
+    Args:
+        error_handler: 错误处理器实例。
+    """
+
+    def _excepthook(exc_type, exc_value, exc_tb) -> None:  # noqa: ANN001
+        # 记录完整 traceback 到日志
+        tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        log = get_logger(__name__)
+        log.error("未捕获异常:\n%s", tb_text)
+        # 通过 ErrorHandler 弹窗提示用户
+        error_handler.handle_error("unknown_error", {"details": tb_text})
+
+    sys.excepthook = _excepthook
+
+
+def _enter_main_window(
+    main_window: MainWindow,
+    onboarding_page: OnboardingPage,
+    log,
+    cookie_configured: bool = True,
+) -> None:  # noqa: ANN001
+    """引导完成后切换到主窗口。
+
+    关闭引导页，显示主窗口。若跳过引导且未配置 Cookie，Toast 提示用户。
+
+    Args:
+        main_window: 主窗口实例。
+        onboarding_page: 引导页实例。
+        log: 日志记录器。
+        cookie_configured: 是否已配置 Cookie（跳过引导时用）。
+    """
+    onboarding_page.close()
+    onboarding_page.deleteLater()
+    main_window.show()
+    log.info("引导完成，主窗口已显示")
+    if not cookie_configured:
+        Toast.show_warning(main_window, "未配置 Cookie，部分功能不可用")
+
+
 def main() -> None:
     """应用入口主流程。"""
     # 1. 日志初始化
@@ -188,23 +239,47 @@ def main() -> None:
 
     # 10. 引导判断
     config_repo = ConfigRepository(conn)
+    cookie_repo = CookieRepository(conn)
     onboarding_done = config_repo.get_onboarding_done()
 
-    # 11. 窗口显示
-    if onboarding_done:
-        main_window = MainWindow(conn, download_bridge, crawler_bridge)
-        main_window.show()
-        log.info("主窗口已显示")
-    else:
-        # TODO(v0.0.8): 引导页完整流程实现，本里程碑临时显示主窗口
-        log.warning("首次引导未完成，临时显示主窗口（引导页 v0.0.8 实现）")
-        main_window = MainWindow(conn, download_bridge, crawler_bridge)
-        main_window.show()
+    # 11. 主窗口 + ErrorHandler 初始化
+    main_window = MainWindow(conn, download_bridge, crawler_bridge)
+    error_handler = ErrorHandler(main_window)
+    main_window.set_error_handler(error_handler)
 
-    # 12. 事件循环
+    # 12. 全局异常捕获
+    _install_excepthook(error_handler)
+
+    # 13. 窗口显示（引导判断）
+    if onboarding_done:
+        main_window.show()
+        log.info("主窗口已显示（引导已完成）")
+    else:
+        # 首次启动：显示引导流程
+        cookie_tester = crawler_bridge._cookie_tester  # noqa: SLF001
+        onboarding_page = OnboardingPage(
+            config_repo=config_repo,
+            cookie_repo=cookie_repo,
+            async_worker=async_worker,
+            cookie_tester=cookie_tester,
+            main_window=main_window,
+            error_handler=error_handler,
+        )
+        onboarding_page.onboarding_completed.connect(
+            lambda: _enter_main_window(main_window, onboarding_page, log)
+        )
+        onboarding_page.onboarding_skipped.connect(
+            lambda configured: _enter_main_window(
+                main_window, onboarding_page, log, cookie_configured=configured
+            )
+        )
+        onboarding_page.start()
+        log.info("引导流程已显示")
+
+    # 14. 事件循环
     exit_code = app.exec()
 
-    # 13. 退出清理
+    # 15. 退出清理
     _cleanup(async_worker, conn)
     log.info("=== %s 退出，code=%s ===", APP_NAME, exit_code)
     sys.exit(exit_code)
