@@ -16,12 +16,14 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
 
 from app.logger import get_logger
 from crawlers import api_spec
+from crawlers.exceptions import UserNotFoundError
 
 if TYPE_CHECKING:
     from crawlers.http_client import HttpClient
@@ -283,3 +285,130 @@ class UserHomeCrawler:
                     return False
 
         return True
+
+    # === 主流程 ===
+
+    async def fetch_user_posts(
+        self,
+        sec_user_id: str,
+        filters: HomeFilters,
+        cookie: str,
+        progress_callback: Callable[[int], None] | None = None,
+    ) -> AsyncIterator[PostItem]:
+        """异步迭代产出符合过滤条件的作品。
+
+        流程（见计划文档 4.3 节）:
+            1. 维护分页游标 ``max_cursor``，初始为 0
+            2. 循环调用 post 接口
+            3. 每页解析 ``aweme_list``，逐条构造 PostItem
+            4. 对每个 PostItem 应用过滤逻辑，符合条件则 yield
+            5. 每拉取一页后调用 ``progress_callback(已抓取总数)``
+            6. 根据 ``has_more`` / ``max_count`` / 游标是否变化决定是否继续
+
+        参数:
+            sec_user_id: 用户主页 sec_user_id。
+            filters: 过滤条件（类型/数量/时间段）。
+            cookie: 调用本次请求所用的 Cookie 字符串。
+            progress_callback: 进度回调，传入"已抓取总数"（含未通过过滤的）；
+                为 None 时跳过。回调异常仅记录日志，不中断抓取。
+
+        返回:
+            异步迭代器，逐个 yield PostItem。
+
+        异常:
+            UserNotFoundError: 用户主页不存在或不可见（status_code != 0）。
+            CookieInvalidError / RateLimitedError / VerifyRequiredError / NetworkError:
+                由 HttpClient 抛出。
+        """
+        max_cursor = 0
+        yielded_count = 0
+        fetched_count = 0
+        logger.info("开始抓取主页 sec_user_id=%s filters=%s", sec_user_id, filters)
+
+        while True:
+            params = self._build_post_params(sec_user_id, max_cursor)
+            response = await self._http_client.get(
+                api_spec.AWEME_POST_URL,
+                params=params,
+                use_cookie_pool=False,
+                cookie=cookie,
+            )
+
+            # HTTP 200 后才到这里：解析 JSON
+            try:
+                payload = response.json()
+            except ValueError as e:
+                logger.error("主页响应 JSON 解析失败: sec_user_id=%s error=%s", sec_user_id, e)
+                raise UserNotFoundError(f"主页响应非 JSON: {e}") from e
+
+            status_code = payload.get("status_code")
+            if status_code != 0:
+                status_msg = payload.get("status_msg") or "未知错误"
+                logger.warning(
+                    "主页业务错误: sec_user_id=%s status_code=%s msg=%s",
+                    sec_user_id,
+                    status_code,
+                    status_msg,
+                )
+                raise UserNotFoundError(f"用户主页不存在或不可见（{status_code}: {status_msg}）")
+
+            aweme_list = payload.get("aweme_list")
+            if not isinstance(aweme_list, list):
+                aweme_list = []
+            has_more = payload.get("has_more")
+            next_cursor = payload.get("max_cursor")
+
+            for aweme in aweme_list:
+                if not isinstance(aweme, dict):
+                    continue
+                fetched_count += 1
+                item = self._build_post_item(aweme)
+                if self._match_filters(item, filters):
+                    yield item
+                    yielded_count += 1
+                    if filters.max_count > 0 and yielded_count >= filters.max_count:
+                        # 达到数量上限，提前结束
+                        self._invoke_progress(progress_callback, fetched_count)
+                        return
+
+            # 每页拉取完成后通知进度
+            self._invoke_progress(progress_callback, fetched_count)
+
+            # 终止条件 1：无更多作品
+            if has_more != 1:
+                return
+            # 终止条件 2：游标未变化，防止死循环
+            if next_cursor == max_cursor:
+                logger.warning(
+                    "主页游标未变化，终止抓取: sec_user_id=%s cursor=%s",
+                    sec_user_id,
+                    max_cursor,
+                )
+                return
+            # 终止条件 3：游标无效（None 或非整数）
+            if not isinstance(next_cursor, int) or next_cursor < 0:
+                logger.warning(
+                    "主页游标无效，终止抓取: sec_user_id=%s cursor=%r",
+                    sec_user_id,
+                    next_cursor,
+                )
+                return
+            max_cursor = next_cursor
+
+    @staticmethod
+    def _invoke_progress(
+        progress_callback: Callable[[int], None] | None,
+        fetched_count: int,
+    ) -> None:
+        """安全调用进度回调，回调异常仅记录日志不中断抓取。
+
+        参数:
+            progress_callback: 回调函数；None 时直接返回。
+            fetched_count: 已抓取总数（含未通过过滤的）。
+        """
+        if progress_callback is None:
+            return
+        try:
+            progress_callback(fetched_count)
+        except Exception as e:
+            logger.warning("进度回调异常（已忽略）: %s", e)
