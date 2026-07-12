@@ -37,7 +37,9 @@ from PySide6.QtWidgets import (
 
 from app.logger import get_logger
 from ui.widgets.filter_bar import FilterBar
+from ui.widgets.loading_overlay import LoadingOverlay
 from ui.widgets.thumbnail_loader import ThumbnailLoader
+from ui.widgets.toast import Toast
 from worker.crawler_bridge import CrawlerBridge
 
 logger = get_logger(__name__)
@@ -205,6 +207,7 @@ class FetchPage(QWidget):
         self._result_widgets: list[ResultItemWidget] = []
         self._is_parsing = False
         self._is_fetching = False
+        self._loading_overlay = LoadingOverlay(self)
 
         self._setup_ui()
         self._connect_bridge_signals()
@@ -384,6 +387,7 @@ class FetchPage(QWidget):
             # 取消解析
             self._is_parsing = False
             self._parse_btn.setText("开始解析")
+            self._loading_overlay.hide()
             self.cancel_parse_requested.emit()
             return
 
@@ -395,11 +399,13 @@ class FetchPage(QWidget):
         self._hide_input_error()
         self._is_parsing = True
         self._parse_btn.setText("解析中... 点击取消")
+        self._loading_overlay.show(self, "正在解析链接...", cancelable=True)
         self.parse_requested.emit(text)
 
     def _on_parse_progress(self, current: int, total: int) -> None:
         """解析进度。"""
         self._parse_btn.setText(f"解析中... {current}/{total}")
+        self._loading_overlay.update_progress(current, total)
 
     def on_parse_completed(self, results: list) -> None:
         """解析完成。
@@ -409,6 +415,7 @@ class FetchPage(QWidget):
         """
         self._is_parsing = False
         self._parse_btn.setText("开始解析")
+        self._loading_overlay.hide()
         self._clear_results()
 
         has_home_link = False
@@ -431,6 +438,7 @@ class FetchPage(QWidget):
         """解析失败。"""
         self._is_parsing = False
         self._parse_btn.setText("开始解析")
+        self._loading_overlay.hide()
         self._show_input_error(f"解析失败：{reason}")
 
     def on_home_fetch_progress(self, current: int, total: int) -> None:
@@ -439,12 +447,14 @@ class FetchPage(QWidget):
             self._parse_btn.setText(f"抓取中... {current}/{total}")
         else:
             self._parse_btn.setText(f"抓取中... 已获取 {current}")
+            self._loading_overlay.update_message(f"已获取 {current} 条")
 
     def on_home_fetch_completed(self, results: list) -> None:
         """主页抓取完成。"""
         self._is_fetching = False
         self._parse_btn.setText("开始解析")
         self._filter_bar.set_loading(False)
+        self._loading_overlay.hide()
         self._clear_results()
 
         for post_item in results:
@@ -459,6 +469,7 @@ class FetchPage(QWidget):
         self._is_fetching = False
         self._parse_btn.setText("开始解析")
         self._filter_bar.set_loading(False)
+        self._loading_overlay.hide()
         self._show_input_error(f"主页抓取失败：{reason}")
 
     def _on_fetch_requested(self, filters: dict) -> None:
@@ -468,6 +479,7 @@ class FetchPage(QWidget):
             return
         self._is_fetching = True
         self._filter_bar.set_loading(True)
+        self._loading_overlay.show(self, "正在抓取用户主页...", cancelable=True)
         self.home_fetch_requested.emit(sec_user_id, filters)
 
     def _parsed_url_to_dict(self, parsed) -> dict:
@@ -549,6 +561,7 @@ class FetchPage(QWidget):
         aweme_ids = [w.aweme_id for w in self._result_widgets if w.is_selected()]
         if aweme_ids:
             self.download_requested.emit(aweme_ids, dir_path)
+            Toast.show_success(self, f"已加入下载队列（{len(aweme_ids)} 项）")
 
     def _show_input_error(self, message: str) -> None:
         """显示输入错误提示。"""
