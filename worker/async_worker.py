@@ -68,6 +68,8 @@ class AsyncWorker(QThread):
         self._loop_ready: threading.Event = threading.Event()
         # loop 内的停止信号
         self._stop_event: asyncio.Event | None = None
+        # 工作线程的线程 ID（run() 中赋值）
+        self._thread_id: int | None = None
 
     def run(self) -> None:
         """QThread.run 重写：在工作线程创建并运行 asyncio loop。
@@ -81,6 +83,7 @@ class AsyncWorker(QThread):
         """
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
+        self._thread_id = threading.get_ident()
         self._stop_event = asyncio.Event()
         self._loop_ready.set()
         logger.info("AsyncWorker loop 已在工作线程创建")
@@ -176,7 +179,7 @@ class AsyncWorker(QThread):
         Raises:
             RuntimeError: 在非工作线程调用
         """
-        if threading.get_ident() != self.currentThreadId():
+        if self._thread_id is None or threading.get_ident() != self._thread_id:
             raise RuntimeError("run_in_thread 只能在工作线程内部调用")
         if self._loop is None:
             raise RuntimeError("AsyncWorker loop 未就绪")
