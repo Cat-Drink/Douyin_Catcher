@@ -146,12 +146,13 @@ def cleanup_cookie_traces() -> None:
     """
     yield
     # session 结束后清理 Cookie 文件
-    for path in (
-        _COOKIE_PATH,
-        _SEC_USER_ID_PATH,
-        _AWEME_ID_PATH,
-        _IMAGE_SET_AWEME_ID_PATH,
-        _LONG_VIDEO_AWEME_ID_PATH,
-    ):
-        if path.exists():
-            path.unlink()
+    # 临时禁用：用户要求保留 .test_*.txt 文件以便多次集成测试
+    # for path in (
+    #     _COOKIE_PATH,
+    #     _SEC_USER_ID_PATH,
+    #     _AWEME_ID_PATH,
+    #     _IMAGE_SET_AWEME_ID_PATH,
+    #     _LONG_VIDEO_AWEME_ID_PATH,
+    # ):
+    #     if path.exists():
+    #         path.unlink()
