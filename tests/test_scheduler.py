@@ -18,6 +18,8 @@ from app.models import Task, TaskItem
 from app.repositories import TaskItemRepository, TaskRepository
 from downloader.progress_reporter import ProgressUpdate
 from downloader.scheduler import (
+    DEFAULT_DOWNLOAD_CONNECT_TIMEOUT,
+    DEFAULT_DOWNLOAD_READ_TIMEOUT,
     DEFAULT_MAX_CONCURRENT,
     MAX_CONCURRENT_LIMIT,
     Scheduler,
@@ -91,6 +93,7 @@ class TestConcurrencyControl:
             return httpx.Response(200, content=b"data")
 
         respx.get("https://cdn.example.com/v.mp4").mock(side_effect=tracking_handler)
+        respx.head("https://cdn.example.com/v.mp4").mock(return_value=httpx.Response(404))
 
         conn = get_memory_connection()
         task_id = _insert_task(conn, str(tmp_path))
@@ -204,6 +207,7 @@ class TestStartStop:
 
         with respx.mock:
             respx.get("https://cdn.example.com/v.mp4").mock(side_effect=slow_handler)
+            respx.head("https://cdn.example.com/v.mp4").mock(return_value=httpx.Response(404))
             conn = get_memory_connection()
             task_id = _insert_task(conn, "/tmp/test")
             item = _insert_item(conn, task_id, "aweme001", "https://cdn.example.com/v.mp4")
@@ -229,6 +233,7 @@ class TestCallbacks:
         respx.get("https://cdn.example.com/v.mp4").mock(
             return_value=httpx.Response(200, content=b"video_data")
         )
+        respx.head("https://cdn.example.com/v.mp4").mock(return_value=httpx.Response(404))
         conn = get_memory_connection()
         task_id = _insert_task(conn, str(tmp_path))
         item = _insert_item(conn, task_id, "aweme001", "https://cdn.example.com/v.mp4")
@@ -248,6 +253,7 @@ class TestCallbacks:
     async def test_on_item_failed_callback(self, tmp_path: Path) -> None:
         """下载失败触发 on_item_failed 回调。"""
         respx.get("https://cdn.example.com/v.mp4").mock(return_value=httpx.Response(404))
+        respx.head("https://cdn.example.com/v.mp4").mock(return_value=httpx.Response(404))
         conn = get_memory_connection()
         task_id = _insert_task(conn, str(tmp_path))
         item = _insert_item(conn, task_id, "aweme001", "https://cdn.example.com/v.mp4")
@@ -271,6 +277,7 @@ class TestCallbacks:
         respx.get("https://cdn.example.com/v.mp4").mock(
             return_value=httpx.Response(200, content=data)
         )
+        respx.head("https://cdn.example.com/v.mp4").mock(return_value=httpx.Response(404))
         conn = get_memory_connection()
         task_id = _insert_task(conn, str(tmp_path))
         item = _insert_item(conn, task_id, "aweme001", "https://cdn.example.com/v.mp4")
@@ -303,6 +310,7 @@ class TestPauseResume:
             return httpx.Response(200, content=b"data")
 
         respx.get("https://cdn.example.com/v.mp4").mock(side_effect=slow_handler)
+        respx.head("https://cdn.example.com/v.mp4").mock(return_value=httpx.Response(404))
         conn = get_memory_connection()
         task_id = _insert_task(conn, str(tmp_path))
         item = _insert_item(conn, task_id, "aweme001", "https://cdn.example.com/v.mp4")
@@ -325,6 +333,7 @@ class TestPauseResume:
             return httpx.Response(200, content=b"data")
 
         respx.get("https://cdn.example.com/v.mp4").mock(side_effect=slow_handler)
+        respx.head("https://cdn.example.com/v.mp4").mock(return_value=httpx.Response(404))
         conn = get_memory_connection()
         task_id = _insert_task(conn, str(tmp_path))
         item = _insert_item(conn, task_id, "aweme001", "https://cdn.example.com/v.mp4")
@@ -347,6 +356,7 @@ class TestPauseResume:
             return httpx.Response(200, content=b"data")
 
         respx.get("https://cdn.example.com/v.mp4").mock(side_effect=slow_handler)
+        respx.head("https://cdn.example.com/v.mp4").mock(return_value=httpx.Response(404))
         conn = get_memory_connection()
         task_id = _insert_task(conn, str(tmp_path))
         item = _insert_item(conn, task_id, "aweme001", "https://cdn.example.com/v.mp4")
@@ -394,6 +404,7 @@ class TestPauseResume:
             return httpx.Response(200, content=b"data")
 
         respx.get("https://cdn.example.com/v.mp4").mock(side_effect=slow_handler)
+        respx.head("https://cdn.example.com/v.mp4").mock(return_value=httpx.Response(404))
         conn = get_memory_connection()
         task_id = _insert_task(conn, str(tmp_path))
         items = [
@@ -421,6 +432,7 @@ class TestPauseResume:
             return httpx.Response(200, content=b"data")
 
         respx.get("https://cdn.example.com/v.mp4").mock(side_effect=slow_handler)
+        respx.head("https://cdn.example.com/v.mp4").mock(return_value=httpx.Response(404))
         conn = get_memory_connection()
         task_id = _insert_task(conn, str(tmp_path))
         items = [
@@ -536,6 +548,7 @@ class TestScheduleLoop:
         respx.get("https://cdn.example.com/v.mp4").mock(
             return_value=httpx.Response(200, content=b"video_data")
         )
+        respx.head("https://cdn.example.com/v.mp4").mock(return_value=httpx.Response(404))
         conn = get_memory_connection()
         task_id = _insert_task(conn, str(tmp_path))
         item = _insert_item(conn, task_id, "aweme001", "https://cdn.example.com/v.mp4")
@@ -554,6 +567,7 @@ class TestScheduleLoop:
         respx.get("https://cdn.example.com/v.mp4").mock(
             return_value=httpx.Response(200, content=b"video_data")
         )
+        respx.head("https://cdn.example.com/v.mp4").mock(return_value=httpx.Response(404))
         conn = get_memory_connection()
         task_id = _insert_task(conn, str(tmp_path))
         items = [
@@ -569,6 +583,36 @@ class TestScheduleLoop:
 
         for item in items:
             assert _get_item_status(conn, item.id) == "completed"
+
+
+# ==================== 下载超时配置测试 ====================
+
+
+class TestDownloadTimeoutConfig:
+    """Scheduler 内部 httpx.AsyncClient 下载超时配置测试。"""
+
+    def test_internal_client_has_download_timeout(self) -> None:
+        """未注入 http_client 时，内部客户端使用下载超时配置。"""
+        scheduler = _make_scheduler()
+        timeout = scheduler._http_client.timeout
+        assert timeout.connect == DEFAULT_DOWNLOAD_CONNECT_TIMEOUT
+        assert timeout.read == DEFAULT_DOWNLOAD_READ_TIMEOUT
+
+    def test_external_client_not_overridden(self) -> None:
+        """注入外部 httpx.AsyncClient 时，Scheduler 直接使用不覆盖。"""
+        external_client = httpx.AsyncClient(timeout=httpx.Timeout(5.0))
+        scheduler = Scheduler(
+            conn=get_memory_connection(),
+            http_client=external_client,
+        )
+        assert scheduler._http_client is external_client
+        # 外部客户端超时配置保持不变，未被下载超时覆盖
+        assert scheduler._http_client.timeout.connect == 5.0
+
+    def test_download_timeout_constants_exported(self) -> None:
+        """下载超时常量可从 downloader.scheduler 导入且值正确。"""
+        assert DEFAULT_DOWNLOAD_CONNECT_TIMEOUT == 30.0
+        assert DEFAULT_DOWNLOAD_READ_TIMEOUT == 60.0
 
 
 # ==================== 辅助函数 ====================
