@@ -39,9 +39,11 @@ async def test_image_set_resume_after_interrupt(
     video_parser = VideoParser(http_client, signer)
 
     # 2. 解析图集链接，获取 image_urls 列表
+    # 注：URLParser 统一把 /video/ 路径归为 'video'，image_set 的最终判定
+    # 依赖 VideoParser 调用 detail 接口后的 video_info.type
     share_url = f"https://www.douyin.com/video/{real_image_set_aweme_id}"
     parsed = await url_parser.parse(share_url)
-    assert parsed.type == "image_set"
+    assert parsed.type == "video"
     assert parsed.aweme_id == real_image_set_aweme_id
 
     video_info = await video_parser.parse_video(real_image_set_aweme_id, real_cookie)
