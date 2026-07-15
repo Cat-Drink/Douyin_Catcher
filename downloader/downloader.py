@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
@@ -54,6 +55,15 @@ RETRY_BACKOFF_BASE: int = 2
 
 # 风控限流状态码（与爬虫层一致，触发重试）
 RATE_LIMITED_STATUS_CODES: frozenset[int] = frozenset({461, 412})
+
+# 分片下载：每段目标大小 2MB
+SEGMENT_SIZE: int = 2 * 1024 * 1024
+
+# 分片下载：最大分片数
+MAX_SEGMENTS: int = 8
+
+# 分片下载：大文件阈值，超过此大小启用分片下载
+LARGE_FILE_THRESHOLD: int = 10 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -296,6 +306,198 @@ class Downloader:
         part_path.rename(final_path)
         return str(final_path)
 
+    # === 分片下载 ===
+
+    async def _get_file_size(self, url: str) -> int | None:
+        """通过 HEAD 请求获取文件总大小。
+
+        Args:
+            url: 下载直链
+
+        Returns:
+            文件总字节数，获取失败返回 None
+        """
+        try:
+            response = await self._http_client.head(url)
+            if response.status_code == 200:
+                content_length = response.headers.get("Content-Length")
+                if content_length is not None:
+                    return int(content_length)
+        except httpx.HTTPError as e:
+            logger.warning("HEAD 请求获取文件大小失败: %s", e)
+        return None
+
+    @staticmethod
+    def _calculate_segments(total_bytes: int) -> list[tuple[int, int]]:
+        """计算分片字节范围列表。
+
+        segment_count = min(ceil(total_bytes / SEGMENT_SIZE), MAX_SEGMENTS)
+        每个分片大小 = ceil(total_bytes / segment_count)
+
+        Args:
+            total_bytes: 文件总字节数
+
+        Returns:
+            (start, end) 字节范围列表，end 为包含的末字节偏移
+        """
+        import math
+
+        segment_count = min(math.ceil(total_bytes / SEGMENT_SIZE), MAX_SEGMENTS)
+        segment_size = math.ceil(total_bytes / segment_count)
+        segments: list[tuple[int, int]] = []
+        for i in range(segment_count):
+            start = i * segment_size
+            end = min(start + segment_size - 1, total_bytes - 1)
+            segments.append((start, end))
+        return segments
+
+    def _merge_segments(self, part_paths: list[Path], final_path: Path) -> str:
+        """将分片 .part.{i} 文件按序合并为最终文件。
+
+        合并完成后删除所有临时分片文件。
+
+        Args:
+            part_paths: 分片文件路径列表（按序号排序）
+            final_path: 最终文件路径
+
+        Returns:
+            最终文件路径字符串
+        """
+        if final_path.exists():
+            final_path.unlink()
+        with open(final_path, "wb") as out:
+            for part_path in part_paths:
+                with open(part_path, "rb") as part:
+                    while True:
+                        chunk = part.read(CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        out.write(chunk)
+        # 删除临时分片文件
+        for part_path in part_paths:
+            if part_path.exists():
+                part_path.unlink()
+        return str(final_path)
+
+    async def _download_segmented(
+        self,
+        task_item: TaskItem,
+        url: str,
+        final_path: Path,
+        total_bytes: int,
+    ) -> DownloadResult:
+        """分片并发下载大文件。
+
+        将文件分割为多个字节范围段，使用独立的 HTTP Range 请求并发下载。
+        所有分片完成后合并为最终文件。
+
+        Args:
+            task_item: 任务项
+            url: 下载直链
+            final_path: 最终文件路径
+            total_bytes: 文件总字节数
+
+        Returns:
+            下载结果
+        """
+        logger.info(
+            "分片下载 task_item id=%s total_bytes=%d",
+            task_item.id,
+            total_bytes,
+        )
+
+        segments = self._calculate_segments(total_bytes)
+        segment_count = len(segments)
+        part_paths = [Path(str(final_path) + f".part.{i}") for i in range(segment_count)]
+        segment_progress = [0] * segment_count
+
+        # 进度聚合与持久化
+        last_persist_time = time.monotonic()
+        last_persist_bytes = 0
+
+        def make_chunk_callback(idx: int) -> Callable[[int], None]:
+            def callback(chunk_bytes: int) -> None:
+                nonlocal last_persist_time, last_persist_bytes
+                segment_progress[idx] += chunk_bytes
+                total_downloaded = sum(segment_progress)
+                self._progress_reporter.update(task_item.id, total_downloaded, total_bytes)
+                now = time.monotonic()
+                if (
+                    now - last_persist_time >= PERSIST_INTERVAL_SECONDS
+                    or total_downloaded - last_persist_bytes >= PERSIST_INTERVAL_BYTES
+                ):
+                    self._persist_progress(task_item.id, total_downloaded, total_bytes)
+                    last_persist_time = now
+                    last_persist_bytes = total_downloaded
+
+            return callback
+
+        # 分片信号量（不挤占主下载并发槽位）
+        segment_semaphore = asyncio.Semaphore(MAX_SEGMENTS)
+
+        async def download_one_segment(
+            idx: int,
+            sem: asyncio.Semaphore,
+        ) -> int:
+            async with sem:
+                start, end = segments[idx]
+                return await self._download_segment(
+                    url, part_paths[idx], start, end, make_chunk_callback(idx)
+                )
+
+        try:
+            results = await asyncio.gather(
+                *[download_one_segment(i, segment_semaphore) for i in range(segment_count)],
+                return_exceptions=True,
+            )
+
+            # 检查结果
+            for i, result in enumerate(results):
+                if isinstance(result, ValueError):
+                    # 服务端不支持 byte-range，回退到单流下载
+                    logger.warning(
+                        "分片 %d 返回 200，回退到单流下载 task_item id=%s",
+                        i,
+                        task_item.id,
+                    )
+                    # 清理已下载的分片文件
+                    for pp in part_paths:
+                        if pp.exists():
+                            pp.unlink()
+                    return DownloadResult(
+                        success=False,
+                        error="FALLBACK_TO_SINGLE_STREAM",
+                    )
+                if isinstance(result, BaseException):
+                    if isinstance(result, asyncio.CancelledError):
+                        raise
+                    reason = f"分片 {i} 下载失败: {result}"
+                    self._mark_status(task_item.id, "failed", fail_reason=reason)
+                    # 清理已下载的分片文件
+                    for pp in part_paths:
+                        if pp.exists():
+                            pp.unlink()
+                    return DownloadResult(success=False, error=reason)
+
+            # 所有分片完成 → 合并
+            final_str = self._merge_segments(part_paths, final_path)
+            self._mark_status(task_item.id, "completed", local_path=final_str)
+            # 最终持久化一次
+            self._persist_progress(task_item.id, total_bytes, total_bytes)
+            logger.info("分片下载完成 task_item id=%s path=%s", task_item.id, final_str)
+            return DownloadResult(success=True, local_path=final_str)
+
+        except asyncio.CancelledError:
+            # 暂停/取消：持久化进度，保留 .part 文件
+            total_downloaded = sum(segment_progress)
+            self._persist_progress(task_item.id, total_downloaded, total_bytes)
+            logger.info(
+                "分片下载被取消 task_item id=%s 已保存进度 %d bytes",
+                task_item.id,
+                total_downloaded,
+            )
+            raise
+
     # === 下载主流程 ===
 
     async def download(self, task_item: TaskItem) -> DownloadResult:
@@ -342,6 +544,7 @@ class Downloader:
         """单文件下载（视频/长视频/图集单张）。
 
         含 Range 续传、流式写入、重试。受总 Semaphore 约束。
+        大文件（≥10MB）自动切换为分片并发下载。
 
         Args:
             task_item: 任务项
@@ -355,6 +558,16 @@ class Downloader:
         """
         part_path = self._get_part_path(final_path)
         retry_count = task_item.retry_count
+
+        # 大文件分片下载探测
+        file_size = await self._get_file_size(url)
+        if file_size is not None and file_size >= LARGE_FILE_THRESHOLD and not part_path.exists():
+            async with self._semaphore:
+                result = await self._download_segmented(task_item, url, final_path, file_size)
+            if result.success or result.error != "FALLBACK_TO_SINGLE_STREAM":
+                return result
+            # 回退到单流下载
+            logger.info("回退到单流下载 task_item id=%s", task_item.id)
 
         async with self._semaphore:
             while True:
@@ -503,6 +716,92 @@ class Downloader:
         # 最终持久化一次
         self._persist_progress(task_item.id, downloaded_bytes, total_bytes)
         return downloaded_bytes
+
+    async def _download_segment(
+        self,
+        url: str,
+        part_path: Path,
+        start: int,
+        end: int,
+        on_chunk: Callable[[int], None],
+    ) -> int:
+        """下载单个分片到 .part.{index} 文件。
+
+        含 Range 续传、流式写入、独立重试。
+
+        Args:
+            url: 下载直链
+            part_path: 分片临时文件路径（.part.{index}）
+            start: 分片起始字节（包含）
+            end: 分片结束字节（包含）
+            on_chunk: 每接收一个数据块的回调，参数为本块字节数
+
+        Returns:
+            该分片已下载的总字节数
+
+        Raises:
+            ValueError: 服务端返回 200 而非 206（不支持 byte-range）
+            httpx.HTTPError: 重试耗尽后的网络异常
+        """
+        retry_count = 0
+
+        while True:
+            # 检查 .part 文件是否存在 → 读取已下载字节数（断点续传）
+            downloaded = part_path.stat().st_size if part_path.exists() else 0
+            segment_start = start + downloaded
+
+            headers: dict[str, str] = {}
+            if downloaded > 0:
+                headers["Range"] = f"bytes={segment_start}-{end}"
+            else:
+                headers["Range"] = f"bytes={start}-{end}"
+
+            try:
+                async with self._http_client.stream("GET", url, headers=headers) as response:
+                    if response.status_code == 200:
+                        # 服务端不支持 byte-range，无法分片下载
+                        raise ValueError("服务端返回 200 而非 206，不支持 byte-range 分片下载")
+                    elif response.status_code == 206:
+                        pass  # 分片请求成功
+                    elif self._should_retry(response.status_code, None):
+                        retry_count += 1
+                        if retry_count > MAX_RETRY_COUNT:
+                            raise httpx.HTTPError(f"HTTP {response.status_code} 重试耗尽")
+                        logger.warning(
+                            "分片 HTTP %d，第 %d 次重试",
+                            response.status_code,
+                            retry_count,
+                        )
+                        await self._retry_with_backoff(retry_count)
+                        continue
+                    else:
+                        raise httpx.HTTPError(f"HTTP {response.status_code}")
+
+                    # 流式接收
+                    mode = "ab" if downloaded > 0 else "wb"
+                    with open(part_path, mode) as f:
+                        async for chunk in response.aiter_bytes(CHUNK_SIZE):
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            on_chunk(len(chunk))
+
+                return downloaded
+
+            except asyncio.CancelledError:
+                raise
+            except ValueError:
+                raise
+            except httpx.HTTPError as e:
+                retry_count += 1
+                if retry_count > MAX_RETRY_COUNT:
+                    raise
+                logger.warning(
+                    "分片网络异常 %s，第 %d 次重试",
+                    e,
+                    retry_count,
+                )
+                await self._retry_with_backoff(retry_count)
+                continue
 
     async def _download_image_set(
         self,
