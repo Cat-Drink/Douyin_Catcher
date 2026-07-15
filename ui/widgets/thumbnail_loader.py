@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, QUrl, Signal
+from PySide6.QtCore import QObject, Qt, QUrl, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtNetwork import (
     QNetworkAccessManager,
@@ -84,8 +84,8 @@ class ThumbnailLoader(QObject):
                 pixmap = pixmap.scaled(
                     self._target_size[0],
                     self._target_size[1],
-                    aspectMode=1,  # KeepAspectRatio
-                    mode=1,  # SmoothTransformation
+                    aspectMode=Qt.AspectRatioMode.KeepAspectRatio,
+                    mode=Qt.TransformationMode.SmoothTransformation,
                 )
             else:
                 logger.warning("缩略图数据解析失败")
