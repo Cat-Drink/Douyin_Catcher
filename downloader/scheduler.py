@@ -35,6 +35,12 @@ DEFAULT_MAX_CONCURRENT: int = 3
 # 并发上限 10
 MAX_CONCURRENT_LIMIT: int = 10
 
+# 下载客户端连接超时（秒）
+DEFAULT_DOWNLOAD_CONNECT_TIMEOUT: float = 30.0
+
+# 下载客户端读取超时（秒）
+DEFAULT_DOWNLOAD_READ_TIMEOUT: float = 60.0
+
 
 class Scheduler:
     """任务调度器。
@@ -76,7 +82,14 @@ class Scheduler:
         self._semaphore = asyncio.Semaphore(self._max_concurrent)
 
         # httpx 客户端：外部注入或内部创建
-        self._http_client = http_client or httpx.AsyncClient()
+        self._http_client = http_client or httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=DEFAULT_DOWNLOAD_CONNECT_TIMEOUT,
+                read=DEFAULT_DOWNLOAD_READ_TIMEOUT,
+                write=10.0,
+                pool=10.0,
+            ),
+        )
         self._owns_http_client = http_client is None
 
         # ProgressReporter 与 Downloader
