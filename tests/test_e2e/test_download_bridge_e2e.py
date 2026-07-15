@@ -146,8 +146,11 @@ async def test_download_bridge_download_e2e(
         if async_worker.isRunning():
             with contextlib.suppress(Exception):
                 async_worker.submit(scheduler.stop()).result(timeout=10)
+        # http_client 绑定到 worker 线程的 event loop，
+        # 必须在 async_worker.stop() 之前通过 submit() 在 worker 线程内关闭
+        with contextlib.suppress(Exception):
+            async_worker.submit(http_client.close()).result(timeout=10)
         async_worker.stop()
-        await http_client.close()
 
 
 async def test_download_bridge_pause_resume_e2e(
@@ -285,5 +288,8 @@ async def test_download_bridge_pause_resume_e2e(
         if async_worker.isRunning():
             with contextlib.suppress(Exception):
                 async_worker.submit(scheduler.stop()).result(timeout=10)
+        # http_client 绑定到 worker 线程的 event loop，
+        # 必须在 async_worker.stop() 之前通过 submit() 在 worker 线程内关闭
+        with contextlib.suppress(Exception):
+            async_worker.submit(http_client.close()).result(timeout=10)
         async_worker.stop()
-        await http_client.close()

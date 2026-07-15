@@ -114,6 +114,9 @@ async def test_ui_cookie_page_test_e2e(
         status_text = page._status_label.text()
         assert "有效 1" in status_text, f"状态栏未显示有效状态: {status_text}"
     finally:
+        # http_client 绑定到 worker 线程的 event loop，
+        # 必须在 worker.stop() 之前通过 submit() 在 worker 线程内关闭
+        future = worker.submit(http_client.close())
+        future.result(timeout=10)
         worker.stop()
-        await http_client.close()
         page.deleteLater()

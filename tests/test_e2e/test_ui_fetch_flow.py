@@ -11,6 +11,7 @@ URLParser → WorkerSignals.parse_completed → FetchPage.on_parse_completed →
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import sqlite3
 
 import pytest
@@ -129,5 +130,8 @@ async def test_ui_fetch_page_parse_e2e(
         assert len(page._result_widgets) == 1
         assert page._result_widgets[0].aweme_id == real_aweme_id
     finally:
+        # http_client 绑定到 worker 线程的 event loop，
+        # 必须在 worker.stop() 之前通过 submit() 在 worker 线程内关闭
+        with contextlib.suppress(Exception):
+            worker.submit(http_client.close()).result(timeout=10)
         worker.stop()
-        await http_client.close()

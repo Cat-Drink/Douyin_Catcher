@@ -117,8 +117,11 @@ async def test_crawler_bridge_parse_e2e(
         parsed = completed[0][0]
         assert parsed.aweme_id == real_aweme_id
     finally:
+        # http_client 绑定到 worker 线程的 event loop，
+        # 必须在 worker.stop() 之前通过 submit() 在 worker 线程内关闭
+        future = worker.submit(http_client.close())
+        future.result(timeout=10)
         worker.stop()
-        await http_client.close()
 
 
 async def test_crawler_bridge_home_fetch_e2e(
@@ -147,8 +150,11 @@ async def test_crawler_bridge_home_fetch_e2e(
         for post in posts:
             assert post.aweme_id
     finally:
+        # http_client 绑定到 worker 线程的 event loop，
+        # 必须在 worker.stop() 之前通过 submit() 在 worker 线程内关闭
+        future = worker.submit(http_client.close())
+        future.result(timeout=10)
         worker.stop()
-        await http_client.close()
 
 
 async def test_crawler_bridge_cookie_test_e2e(
@@ -174,5 +180,8 @@ async def test_crawler_bridge_cookie_test_e2e(
         assert cid == cookie_id
         assert valid is True, f"Cookie 测试未通过: {msg}"
     finally:
+        # http_client 绑定到 worker 线程的 event loop，
+        # 必须在 worker.stop() 之前通过 submit() 在 worker 线程内关闭
+        future = worker.submit(http_client.close())
+        future.result(timeout=10)
         worker.stop()
-        await http_client.close()
