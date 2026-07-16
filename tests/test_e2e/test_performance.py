@@ -149,12 +149,12 @@ async def test_high_frequency_progress_throttling(tmp_path: Path) -> None:
     def on_progress(updates: list[ProgressUpdate]) -> None:
         received_updates.append(updates)
 
-    reporter = ProgressReporter(callback=on_progress, batch_interval=0.5)
-    await reporter.start()
+    reporter = ProgressReporter(on_progress=on_progress, flush_interval_ms=500)
+    reporter.start()
 
     # 高频发送 100 个进度更新
     for i in range(100):
-        reporter.report(ProgressUpdate(item_id=1, downloaded_bytes=i * 1024, total_bytes=102400))
+        reporter.update(task_item_id=1, downloaded_bytes=i * 1024, total_bytes=102400)
 
     # 等待足够时间让节流器处理
     await asyncio.sleep(2.0)
