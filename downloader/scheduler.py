@@ -41,6 +41,16 @@ DEFAULT_DOWNLOAD_CONNECT_TIMEOUT: float = 30.0
 # 下载客户端读取超时（秒）
 DEFAULT_DOWNLOAD_READ_TIMEOUT: float = 60.0
 
+# 下载客户端默认请求头（抖音 CDN 要求 Referer 和 User-Agent，否则返回 403）
+DOWNLOAD_DEFAULT_HEADERS: dict[str, str] = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://www.douyin.com/",
+}
+
 
 class Scheduler:
     """任务调度器。
@@ -89,6 +99,7 @@ class Scheduler:
                 write=10.0,
                 pool=10.0,
             ),
+            headers=DOWNLOAD_DEFAULT_HEADERS,
         )
         self._owns_http_client = http_client is None
 
