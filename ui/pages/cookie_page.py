@@ -17,8 +17,10 @@
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -51,6 +53,10 @@ _TUTORIAL_STEPS: list[tuple[str, str]] = [
     ("6. 粘贴到左侧", "粘到添加 Cookie 弹窗"),
     ('7. 点"测试 Cookie"', "验证是否有效"),
 ]
+
+# 教程截图目录与显示宽度
+_TUTORIAL_DIR = Path(__file__).parent.parent / "assets" / "cookie_tutorial"
+_TUTORIAL_IMAGE_WIDTH = 400
 
 
 class AddCookieDialog(QDialog):
@@ -288,7 +294,7 @@ class CookiePage(QWidget):
         title.setStyleSheet("font-size: 16px; font-weight: 600;")
         layout.addWidget(title)
 
-        for step_title, step_desc in _TUTORIAL_STEPS:
+        for idx, (step_title, step_desc) in enumerate(_TUTORIAL_STEPS, start=1):
             step_layout = QVBoxLayout()
             step_layout.setSpacing(4)
             step_title_label = QLabel(step_title)
@@ -297,6 +303,27 @@ class CookiePage(QWidget):
             step_desc_label = QLabel(step_desc)
             step_desc_label.setStyleSheet("color: #6B7280; font-size: 13px;")
             step_layout.addWidget(step_desc_label)
+            # 截图 QLabel：加载 stepN.png，缺失或加载失败时显示占位框
+            image_label = QLabel()
+            image_path = _TUTORIAL_DIR / f"step{idx}.png"
+            pixmap = QPixmap(str(image_path))
+            if not pixmap.isNull():
+                image_label.setPixmap(
+                    pixmap.scaledToWidth(
+                        _TUTORIAL_IMAGE_WIDTH,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                )
+            else:
+                image_label.setText(f"📷 截图待提供：step{idx}.png")
+                image_label.setFixedHeight(120)
+                image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                image_label.setStyleSheet(
+                    "border: 1px dashed #D1D5DB; border-radius: 8px; "
+                    "color: #9CA3AF; background-color: #FAFAFA; "
+                    "font-size: 13px;"
+                )
+            step_layout.addWidget(image_label)
             layout.addLayout(step_layout)
 
         return widget
