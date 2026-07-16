@@ -13,6 +13,7 @@ import sqlite3
 from pathlib import Path
 
 import httpx
+import pytest
 import respx
 
 from app.models import Task, TaskItem
@@ -22,8 +23,9 @@ from crawlers.signer import Signer
 from crawlers.video_parser import VideoParser
 from downloader.scheduler import Scheduler
 
+pytestmark = pytest.mark.integration
 
-@respx.mock
+
 async def test_retry_on_network_error(
     real_cookie: str,
     real_aweme_id: str,
@@ -37,7 +39,7 @@ async def test_retry_on_network_error(
     http_client = HttpClient(cookie_repo, signer)
     video_parser = VideoParser(http_client, signer)
 
-    # 2. 用真实 Cookie 解析视频直链（获取真实下载 URL）
+    # 2. 用真实 Cookie 解析视频直链（获取真实下载 URL，不 mock）
     video_info = await video_parser.parse_video(real_aweme_id, real_cookie)
     download_url = video_info.no_watermark_url
     assert download_url is not None
@@ -52,69 +54,71 @@ async def test_retry_on_network_error(
             raise httpx.ConnectError("mock network error")
         return httpx.Response(200, content=b"fake_video_data_for_retry_test")
 
-    respx.get(download_url).mock(side_effect=side_effect)
+    with respx.mock(assert_all_mocked=False) as mock:
+        # mock HEAD 请求返回 404，使分片下载探测回退到单流
+        mock.head(download_url).mock(return_value=httpx.Response(404))
+        mock.get(download_url).mock(side_effect=side_effect)
 
-    # 4. 创建 Task 与 TaskItem
-    task_repo = TaskRepository(clean_db)
-    item_repo = TaskItemRepository(clean_db)
-    task_id = task_repo.create(
-        Task(
-            id=None,
-            source_type="single",
-            source_url=f"https://www.douyin.com/video/{real_aweme_id}",
-            status="pending",
-            total_items=1,
-            download_dir=str(tmp_download_dir),
+        # 4. 创建 Task 与 TaskItem
+        task_repo = TaskRepository(clean_db)
+        item_repo = TaskItemRepository(clean_db)
+        task_id = task_repo.create(
+            Task(
+                id=None,
+                source_type="single",
+                source_url=f"https://www.douyin.com/video/{real_aweme_id}",
+                status="pending",
+                total_items=1,
+                download_dir=str(tmp_download_dir),
+            )
         )
-    )
-    item_id = item_repo.create(
-        TaskItem(
-            id=None,
-            task_id=task_id,
-            aweme_id=real_aweme_id,
-            url=download_url,
-            title=video_info.title,
-            author=video_info.author,
-            type="video",
-            cover_url=video_info.cover_url,
-            status="pending",
-            total_bytes=0,
+        item_id = item_repo.create(
+            TaskItem(
+                id=None,
+                task_id=task_id,
+                aweme_id=real_aweme_id,
+                url=download_url,
+                title=video_info.title,
+                author=video_info.author,
+                type="video",
+                cover_url=video_info.cover_url,
+                status="pending",
+                total_bytes=0,
+            )
         )
-    )
 
-    # 5. 入队并下载
-    scheduler = Scheduler(conn=clean_db, max_concurrent=1)
-    await scheduler.start()
-    item = item_repo.get(item_id)
-    assert item is not None
-    scheduler.add_task_items([item])
-
-    # 6. 等待下载完成（重试可能需要较长时间）
-    for _ in range(300):
-        await asyncio.sleep(0.5)
+        # 5. 入队并下载
+        scheduler = Scheduler(conn=clean_db, max_concurrent=1)
+        await scheduler.start()
         item = item_repo.get(item_id)
         assert item is not None
-        if item.status in ("completed", "failed"):
-            break
-    await scheduler.stop()
+        scheduler.add_task_items([item])
 
-    # 7. 验证结果
-    item = item_repo.get(item_id)
-    assert item is not None
-    # 重试后应成功（第 4 次请求返回正常数据）
-    assert item.status == "completed", f"重试后仍失败: {item.fail_reason}"
-    assert item.local_path is not None
-    downloaded_file = Path(item.local_path)
-    assert downloaded_file.exists()
+        # 6. 等待下载完成（重试可能需要较长时间）
+        for _ in range(300):
+            await asyncio.sleep(0.5)
+            item = item_repo.get(item_id)
+            assert item is not None
+            if item.status in ("completed", "failed"):
+                break
+        await scheduler.stop()
 
-    # 8. 清理
-    if downloaded_file.exists():
-        downloaded_file.unlink()
+        # 7. 验证结果
+        item = item_repo.get(item_id)
+        assert item is not None
+        # 重试后应成功（第 4 次请求返回正常数据）
+        assert item.status == "completed", f"重试后仍失败: {item.fail_reason}"
+        assert item.local_path is not None
+        downloaded_file = Path(item.local_path)
+        assert downloaded_file.exists()
+
+        # 8. 清理
+        if downloaded_file.exists():
+            downloaded_file.unlink()
 
     await http_client.close()
 
 
-@respx.mock
 async def test_retry_exhausted_then_failed(
     real_cookie: str,
     real_aweme_id: str,
@@ -128,62 +132,64 @@ async def test_retry_exhausted_then_failed(
     http_client = HttpClient(cookie_repo, signer)
     video_parser = VideoParser(http_client, signer)
 
-    # 2. 用真实 Cookie 解析视频直链
+    # 2. 用真实 Cookie 解析视频直链（不 mock）
     video_info = await video_parser.parse_video(real_aweme_id, real_cookie)
     download_url = video_info.no_watermark_url
     assert download_url is not None
 
     # 3. mock 下载 URL：全部返回 500 错误
-    respx.get(download_url).mock(return_value=httpx.Response(500, content=b"server error"))
+    with respx.mock(assert_all_mocked=False) as mock:
+        mock.head(download_url).mock(return_value=httpx.Response(404))
+        mock.get(download_url).mock(return_value=httpx.Response(500, content=b"server error"))
 
-    # 4. 创建 Task 与 TaskItem
-    task_repo = TaskRepository(clean_db)
-    item_repo = TaskItemRepository(clean_db)
-    task_id = task_repo.create(
-        Task(
-            id=None,
-            source_type="single",
-            source_url=f"https://www.douyin.com/video/{real_aweme_id}",
-            status="pending",
-            total_items=1,
-            download_dir=str(tmp_download_dir),
+        # 4. 创建 Task 与 TaskItem
+        task_repo = TaskRepository(clean_db)
+        item_repo = TaskItemRepository(clean_db)
+        task_id = task_repo.create(
+            Task(
+                id=None,
+                source_type="single",
+                source_url=f"https://www.douyin.com/video/{real_aweme_id}",
+                status="pending",
+                total_items=1,
+                download_dir=str(tmp_download_dir),
+            )
         )
-    )
-    item_id = item_repo.create(
-        TaskItem(
-            id=None,
-            task_id=task_id,
-            aweme_id=real_aweme_id,
-            url=download_url,
-            title=video_info.title,
-            author=video_info.author,
-            type="video",
-            cover_url=video_info.cover_url,
-            status="pending",
-            total_bytes=0,
+        item_id = item_repo.create(
+            TaskItem(
+                id=None,
+                task_id=task_id,
+                aweme_id=real_aweme_id,
+                url=download_url,
+                title=video_info.title,
+                author=video_info.author,
+                type="video",
+                cover_url=video_info.cover_url,
+                status="pending",
+                total_bytes=0,
+            )
         )
-    )
 
-    # 5. 入队并下载
-    scheduler = Scheduler(conn=clean_db, max_concurrent=1)
-    await scheduler.start()
-    item = item_repo.get(item_id)
-    assert item is not None
-    scheduler.add_task_items([item])
-
-    # 6. 等待重试耗尽
-    for _ in range(300):
-        await asyncio.sleep(0.5)
+        # 5. 入队并下载
+        scheduler = Scheduler(conn=clean_db, max_concurrent=1)
+        await scheduler.start()
         item = item_repo.get(item_id)
         assert item is not None
-        if item.status in ("completed", "failed"):
-            break
-    await scheduler.stop()
+        scheduler.add_task_items([item])
 
-    # 7. 验证失败
-    item = item_repo.get(item_id)
-    assert item is not None
-    assert item.status == "failed"
-    assert item.fail_reason is not None
+        # 6. 等待重试耗尽
+        for _ in range(300):
+            await asyncio.sleep(0.5)
+            item = item_repo.get(item_id)
+            assert item is not None
+            if item.status in ("completed", "failed"):
+                break
+        await scheduler.stop()
+
+        # 7. 验证失败
+        item = item_repo.get(item_id)
+        assert item is not None
+        assert item.status == "failed"
+        assert item.fail_reason is not None
 
     await http_client.close()
