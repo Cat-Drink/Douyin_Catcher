@@ -4,7 +4,7 @@
     分享链接 → URLParser.parse() → VideoParser.parse_video() → Scheduler 下载 → 文件落盘
 
 需要真实 Cookie（.test_cookie.txt）与真实长视频 aweme_id（.test_long_video_aweme_id.txt）。
-长视频文件较大，等待下载完成的超时时间放宽至 300 秒。
+长视频文件较大，等待下载完成的超时时间放宽至 600 秒。
 """
 
 from __future__ import annotations
@@ -88,13 +88,23 @@ async def test_long_video_download_full_flow(
     assert item is not None
     scheduler.add_task_items([item])
 
-    # 6. 等待下载完成（最长 300 秒，长视频文件较大）
-    for _ in range(600):
+    # 6. 等待下载完成（最长 600 秒，长视频文件较大）
+    import time
+
+    start_time = time.time()
+    for _ in range(1200):
         await asyncio.sleep(0.5)
         item = item_repo.get(item_id)
         assert item is not None
         if item.status in ("completed", "failed"):
             break
+        # 每 30 秒打印一次进度
+        elapsed = time.time() - start_time
+        if int(elapsed) % 30 == 0 and int(elapsed) > 0:
+            print(
+                f"  [{int(elapsed)}s] status={item.status}, "
+                f"downloaded={item.downloaded_bytes}, total={item.total_bytes}"
+            )
     await scheduler.stop()
 
     # 7. 验证结果
