@@ -36,8 +36,8 @@ _AWEME_ID_PATH = _PROJECT_ROOT / ".test_aweme_id.txt"
 _IMAGE_SET_AWEME_ID_PATH = _PROJECT_ROOT / ".test_image_set_aweme_id.txt"
 _LONG_VIDEO_AWEME_ID_PATH = _PROJECT_ROOT / ".test_long_video_aweme_id.txt"
 
-# 标记所有端到端测试为 integration（CI 默认跳过）
-pytestmark = pytest.mark.integration
+# 注意：端到端测试的 integration 标记在各测试文件顶部通过 pytestmark 声明。
+# conftest.py 中的 pytestmark 不会传播到同目录测试文件，故不在此声明。
 
 
 def _read_text_file(path: Path) -> str | None:

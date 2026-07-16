@@ -9,11 +9,15 @@ from __future__ import annotations
 
 import sqlite3
 
+import pytest
+
 from app.models import Cookie
 from app.repositories import CookieRepository
 from crawlers.cookie_tester import CookieTester
 from crawlers.http_client import HttpClient
 from crawlers.signer import Signer
+
+pytestmark = pytest.mark.integration
 
 
 async def test_cookie_validity_check(

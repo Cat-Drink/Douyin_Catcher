@@ -12,6 +12,8 @@ import asyncio
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from app.models import Task, TaskItem
 from app.repositories import TaskItemRepository, TaskRepository
 from crawlers.http_client import HttpClient
@@ -19,6 +21,8 @@ from crawlers.signer import Signer
 from crawlers.url_parser import URLParser
 from crawlers.video_parser import VideoParser
 from downloader.scheduler import Scheduler
+
+pytestmark = pytest.mark.integration
 
 
 async def test_single_video_download_full_flow(
