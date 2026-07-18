@@ -16,8 +16,9 @@ import pytest
 import respx
 
 from app.database import get_memory_connection
-from app.models import Task, TaskItem
-from app.repositories import TaskItemRepository, TaskRepository
+from app.models import Cookie, Task, TaskItem, VideoType
+from app.repositories import CookieRepository, TaskItemRepository, TaskRepository
+from crawlers.video_parser import VideoInfo, VideoParser
 from downloader.downloader import (
     CHUNK_SIZE,
     LARGE_FILE_THRESHOLD,
@@ -30,6 +31,7 @@ from downloader.downloader import (
     SEGMENT_SIZE,
     Downloader,
     DownloadResult,
+    _select_urls_by_indices,
 )
 from downloader.progress_reporter import ProgressReporter
 
@@ -717,6 +719,290 @@ class TestDownloadImageSet:
         assert _get_item_status(dl._conn, item.id) == "failed"
 
 
+# ==================== 图集直链失效重新解析测试（v0.1.7 plan 6.6）====================
+
+
+def _make_video_info(image_urls: list[str], aweme_id: str = "aweme001") -> VideoInfo:
+    """构造测试用 VideoInfo。"""
+    return VideoInfo(
+        aweme_id=aweme_id,
+        type=VideoType.IMAGE_SET,
+        title="测试图集",
+        author="作者",
+        author_sec_id="sec_id",
+        duration=None,
+        cover_url="https://example.com/cover.jpg",
+        no_watermark_url=None,
+        image_urls=image_urls,
+        publish_time=None,
+        like_count=0,
+        comment_count=0,
+        share_count=0,
+        collect_count=0,
+        tags=[],
+        raw_json={},
+    )
+
+
+def _make_reparse_deps(
+    image_urls: list[str] | None = None,
+    parse_side_effect: Exception | None = None,
+) -> tuple[MagicMock, MagicMock]:
+    """构造 video_parser + cookie_repository mock 依赖。
+
+    Args:
+        image_urls: parse_video 成功时返回的 image_urls；
+            为 None 且 parse_side_effect 为 None 时默认 ["new1", "new2"]
+        parse_side_effect: parse_video 抛出的异常；非 None 时优先使用
+    """
+    video_parser = MagicMock(spec=VideoParser)
+    if parse_side_effect is not None:
+        video_parser.parse_video = AsyncMock(side_effect=parse_side_effect)
+    else:
+        urls = image_urls if image_urls is not None else ["new1", "new2"]
+        video_parser.parse_video = AsyncMock(return_value=_make_video_info(urls))
+    cookie_repo = MagicMock(spec=CookieRepository)
+    cookie_repo.get_valid.return_value = Cookie(id=1, content="ck=test")
+    return video_parser, cookie_repo
+
+
+class TestSelectUrlsByIndices:
+    """_select_urls_by_indices 模块级函数测试。"""
+
+    def test_empty_string_selects_all(self) -> None:
+        """空 selected_indices_str 表示全选。"""
+        assert _select_urls_by_indices(["a", "b", "c"], "") == ["a", "b", "c"]
+
+    def test_partial_selection(self) -> None:
+        """部分选择。"""
+        assert _select_urls_by_indices(["a", "b", "c"], "[0, 2]") == ["a", "c"]
+
+    def test_invalid_json_selects_all(self) -> None:
+        """非法 JSON 按全选处理。"""
+        assert _select_urls_by_indices(["a", "b"], "invalid") == ["a", "b"]
+
+    def test_non_list_json_selects_all(self) -> None:
+        """非数组 JSON 按全选处理。"""
+        assert _select_urls_by_indices(["a", "b"], "0") == ["a", "b"]
+
+    def test_out_of_range_index_skipped(self) -> None:
+        """越界索引被跳过。"""
+        assert _select_urls_by_indices(["a", "b"], "[0, 5]") == ["a"]
+
+
+class TestIsLinkExpired:
+    """_is_link_expired 判定测试。"""
+
+    def test_403_is_expired(self) -> None:
+        """HTTP 403 判定为直链失效。"""
+        dl = _make_downloader()
+        assert dl._is_link_expired("HTTP 403") is True
+
+    def test_404_is_expired(self) -> None:
+        """HTTP 404 判定为直链失效。"""
+        dl = _make_downloader()
+        assert dl._is_link_expired("HTTP 404") is True
+
+    def test_500_not_expired(self) -> None:
+        """HTTP 500 不判定为直链失效。"""
+        dl = _make_downloader()
+        assert dl._is_link_expired("HTTP 500") is False
+
+    def test_none_not_expired(self) -> None:
+        """None 不判定为直链失效。"""
+        dl = _make_downloader()
+        assert dl._is_link_expired(None) is False
+
+
+class TestCanReparse:
+    """_can_reparse 能力判定测试。"""
+
+    def test_both_injected_can_reparse(self) -> None:
+        """两个依赖都注入时返回 True。"""
+        video_parser, cookie_repo = _make_reparse_deps()
+        dl = _make_downloader(video_parser=video_parser, cookie_repository=cookie_repo)
+        assert dl._can_reparse() is True
+
+    def test_none_injected_cannot_reparse(self) -> None:
+        """无依赖注入时返回 False。"""
+        dl = _make_downloader()
+        assert dl._can_reparse() is False
+
+    def test_only_parser_cannot_reparse(self) -> None:
+        """仅注入 video_parser 返回 False。"""
+        video_parser, _ = _make_reparse_deps()
+        dl = _make_downloader(video_parser=video_parser)
+        assert dl._can_reparse() is False
+
+
+class TestGetCookieString:
+    """_get_cookie_string 测试。"""
+
+    def test_returns_content_when_valid(self) -> None:
+        """有 valid cookie 返回 content。"""
+        video_parser, cookie_repo = _make_reparse_deps()
+        dl = _make_downloader(video_parser=video_parser, cookie_repository=cookie_repo)
+        assert dl._get_cookie_string() == "ck=test"
+
+    def test_returns_none_when_no_valid(self) -> None:
+        """无 valid cookie 返回 None。"""
+        video_parser = MagicMock(spec=VideoParser)
+        cookie_repo = MagicMock(spec=CookieRepository)
+        cookie_repo.get_valid.return_value = None
+        dl = _make_downloader(video_parser=video_parser, cookie_repository=cookie_repo)
+        assert dl._get_cookie_string() is None
+
+
+class TestReparseSingleImageUrl:
+    """_reparse_single_image_url 测试。"""
+
+    async def test_reparse_success_returns_url(self) -> None:
+        """重新解析成功返回对应索引的 url。"""
+        video_parser, cookie_repo = _make_reparse_deps(image_urls=["new0", "new1", "new2"])
+        dl, item = _make_downloader_with_item(
+            aweme_id="aweme001",
+            video_parser=video_parser,
+            cookie_repository=cookie_repo,
+        )
+        new_url = await dl._reparse_single_image_url(item, 1)
+        assert new_url == "new1"
+
+    async def test_reparse_with_selected_indices(self) -> None:
+        """带 selected_image_indices 时按索引筛选。"""
+        video_parser, cookie_repo = _make_reparse_deps(image_urls=["new0", "new1", "new2", "new3"])
+        dl, item = _make_downloader_with_item(
+            aweme_id="aweme001",
+            video_parser=video_parser,
+            cookie_repository=cookie_repo,
+        )
+        item.selected_image_indices = "[0, 2]"  # 筛选后 = [new0, new2]
+        new_url = await dl._reparse_single_image_url(item, 1)  # 子集 idx=1 → new2
+        assert new_url == "new2"
+
+    async def test_reparse_no_parser_returns_none(self) -> None:
+        """无 video_parser 返回 None。"""
+        dl, item = _make_downloader_with_item()
+        assert await dl._reparse_single_image_url(item, 0) is None
+
+    async def test_reparse_parse_fails_returns_none(self) -> None:
+        """parse_video 抛异常时返回 None。"""
+        video_parser, cookie_repo = _make_reparse_deps(parse_side_effect=RuntimeError("network"))
+        dl, item = _make_downloader_with_item(
+            aweme_id="aweme001",
+            video_parser=video_parser,
+            cookie_repository=cookie_repo,
+        )
+        assert await dl._reparse_single_image_url(item, 0) is None
+
+    async def test_reparse_no_cookie_returns_none(self) -> None:
+        """无可用 cookie 返回 None。"""
+        video_parser = MagicMock(spec=VideoParser)
+        cookie_repo = MagicMock(spec=CookieRepository)
+        cookie_repo.get_valid.return_value = None
+        dl, item = _make_downloader_with_item(
+            aweme_id="aweme001",
+            video_parser=video_parser,
+            cookie_repository=cookie_repo,
+        )
+        assert await dl._reparse_single_image_url(item, 0) is None
+
+    async def test_reparse_no_aweme_id_returns_none(self) -> None:
+        """aweme_id 为 None 返回 None。"""
+        video_parser, cookie_repo = _make_reparse_deps()
+        dl, item = _make_downloader_with_item(
+            video_parser=video_parser,
+            cookie_repository=cookie_repo,
+        )
+        item.aweme_id = None
+        assert await dl._reparse_single_image_url(item, 0) is None
+
+    async def test_reparse_index_out_of_range_returns_none(self) -> None:
+        """重新解析后索引越界返回 None。"""
+        video_parser, cookie_repo = _make_reparse_deps(image_urls=["only_one"])
+        dl, item = _make_downloader_with_item(
+            aweme_id="aweme001",
+            video_parser=video_parser,
+            cookie_repository=cookie_repo,
+        )
+        assert await dl._reparse_single_image_url(item, 5) is None
+
+
+class TestImageSetReparseIntegration:
+    """图集下载集成：4xx 失效触发重新解析。"""
+
+    @respx.mock
+    async def test_image_set_reparse_on_403_then_success(self, tmp_path: Path) -> None:
+        """图集 403 失效触发重新解析，重试成功。"""
+        old_urls = [
+            "https://cdn.example.com/old1.jpg",
+            "https://cdn.example.com/old2.jpg",
+        ]
+        new_urls = [
+            "https://cdn.example.com/new1.jpg",
+            "https://cdn.example.com/new2.jpg",
+        ]
+        # 旧 url 返回 403
+        for u in old_urls:
+            respx.head(u).mock(return_value=httpx.Response(403))
+            respx.get(u).mock(return_value=httpx.Response(403))
+        # 新 url 返回 200
+        for u in new_urls:
+            respx.head(u).mock(return_value=httpx.Response(404))
+            respx.get(u).mock(return_value=httpx.Response(200, content=b"img"))
+        video_parser, cookie_repo = _make_reparse_deps(image_urls=new_urls)
+        dl, item = _make_downloader_with_item(
+            download_dir=str(tmp_path),
+            aweme_id="aweme001",
+            item_type="image_set",
+            url="\n".join(old_urls),
+            video_parser=video_parser,
+            cookie_repository=cookie_repo,
+        )
+        _insert_item(dl._conn, item)
+        result = await dl.download(item)
+        assert result.success is True
+        assert _get_item_status(dl._conn, item.id) == "completed"
+        # parse_video 被调用（每张失败图片触发一次）
+        assert video_parser.parse_video.await_count >= 1
+
+    @respx.mock
+    async def test_image_set_reparse_failure_marks_failed(self, tmp_path: Path) -> None:
+        """重新解析失败则按原失败标记 failed。"""
+        old_urls = ["https://cdn.example.com/old1.jpg"]
+        respx.head(old_urls[0]).mock(return_value=httpx.Response(404))
+        respx.get(old_urls[0]).mock(return_value=httpx.Response(404))
+        video_parser, cookie_repo = _make_reparse_deps(parse_side_effect=RuntimeError("network"))
+        dl, item = _make_downloader_with_item(
+            download_dir=str(tmp_path),
+            aweme_id="aweme001",
+            item_type="image_set",
+            url="\n".join(old_urls),
+            video_parser=video_parser,
+            cookie_repository=cookie_repo,
+        )
+        _insert_item(dl._conn, item)
+        result = await dl.download(item)
+        assert result.success is False
+        assert _get_item_status(dl._conn, item.id) == "failed"
+
+    @respx.mock
+    async def test_image_set_no_reparse_when_no_parser(self, tmp_path: Path) -> None:
+        """无 video_parser 注入时 4xx 直接失败不重新解析。"""
+        urls = ["https://cdn.example.com/old1.jpg"]
+        respx.head(urls[0]).mock(return_value=httpx.Response(403))
+        respx.get(urls[0]).mock(return_value=httpx.Response(403))
+        dl, item = _make_downloader_with_item(
+            download_dir=str(tmp_path),
+            aweme_id="aweme001",
+            item_type="image_set",
+            url="\n".join(urls),
+        )
+        _insert_item(dl._conn, item)
+        result = await dl.download(item)
+        assert result.success is False
+        assert _get_item_status(dl._conn, item.id) == "failed"
+
+
 # ==================== download 主入口测试 ====================
 
 
@@ -756,6 +1042,8 @@ class TestDownloadEntry:
 def _make_downloader(
     conn: sqlite3.Connection | None = None,
     reporter: ProgressReporter | None = None,
+    video_parser: VideoParser | None = None,
+    cookie_repository: CookieRepository | None = None,
 ) -> Downloader:
     """创建测试用 Downloader（不依赖真实 DB 数据）。"""
     if conn is None:
@@ -764,7 +1052,14 @@ def _make_downloader(
         reporter = MagicMock(spec=ProgressReporter)
     http_client = httpx.AsyncClient()
     semaphore = asyncio.Semaphore(10)
-    return Downloader(reporter, http_client, semaphore, conn)
+    return Downloader(
+        reporter,
+        http_client,
+        semaphore,
+        conn,
+        video_parser=video_parser,
+        cookie_repository=cookie_repository,
+    )
 
 
 def _make_downloader_with_reporter(reporter: ProgressReporter) -> Downloader:
@@ -780,6 +1075,8 @@ def _make_downloader_with_item(
     item_id: int = 1,
     task_id: int = 1,
     conn: sqlite3.Connection | None = None,
+    video_parser: VideoParser | None = None,
+    cookie_repository: CookieRepository | None = None,
 ) -> tuple[Downloader, TaskItem]:
     """创建 Downloader 并关联一个已插入 task 的 TaskItem（未插入 task_items 表）。"""
     if conn is None:
@@ -798,7 +1095,14 @@ def _make_downloader_with_item(
     reporter = MagicMock(spec=ProgressReporter)
     http_client = httpx.AsyncClient()
     semaphore = asyncio.Semaphore(10)
-    dl = Downloader(reporter, http_client, semaphore, conn)
+    dl = Downloader(
+        reporter,
+        http_client,
+        semaphore,
+        conn,
+        video_parser=video_parser,
+        cookie_repository=cookie_repository,
+    )
     item = TaskItem(
         id=item_id,
         task_id=task_id,
