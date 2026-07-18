@@ -40,6 +40,8 @@ _hiddenimports = [
     "h2",
     "hpack",
     "hyperframe",
+    "downloader.constants",
+    "app.preview_models",
 ]
 
 # 排除的模块（减小体积：测试专用依赖与未使用的工具链）
