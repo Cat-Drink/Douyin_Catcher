@@ -36,7 +36,7 @@ from pathlib import Path
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
-from app import config, database, logger
+from app import config, database
 from app.logger import get_logger, setup_logger
 from app.repositories import (
     ConfigRepository,
@@ -49,6 +49,7 @@ from crawlers.http_client import HttpClient
 from crawlers.signer import Signer
 from crawlers.url_parser import URLParser
 from crawlers.user_home_crawler import UserHomeCrawler
+from crawlers.video_parser import VideoParser
 from downloader.scheduler import Scheduler
 from ui.error_handler import ErrorHandler
 from ui.main_window import APP_VERSION, MainWindow
@@ -76,9 +77,11 @@ def _load_qss(app: QApplication) -> None:
     try:
         qss_text = QSS_PATH.read_text(encoding="utf-8")
         app.setStyleSheet(qss_text)
-        logger.info("QSS 样式表已加载: %s", QSS_PATH)
+        log = get_logger(__name__)
+        log.info("QSS 样式表已加载: %s", QSS_PATH)
     except FileNotFoundError:
-        logger.warning("QSS 样式表不存在: %s", QSS_PATH)
+        log = get_logger(__name__)
+        log.warning("QSS 样式表不存在: %s", QSS_PATH)
 
 
 def _create_bridges(
@@ -111,6 +114,12 @@ def _create_bridges(
     worker_signals = WorkerSignals()
     control_signals = ControlSignals()
 
+    # 爬虫层组件（DownloadBridge 依赖 VideoParser，需先创建）
+    url_parser = URLParser(http_client)
+    user_home_crawler = UserHomeCrawler(http_client, signer)
+    cookie_tester = CookieTester(http_client, signer)
+    video_parser = VideoParser(http_client, signer)
+
     # DownloadBridge
     download_bridge = DownloadBridge(
         async_worker=async_worker,
@@ -119,12 +128,9 @@ def _create_bridges(
         task_repository=task_repo,
         worker_signals=worker_signals,
         control_signals=control_signals,
+        video_parser=video_parser,
+        cookie_repository=cookie_repo,
     )
-
-    # 爬虫层组件
-    url_parser = URLParser(http_client)
-    user_home_crawler = UserHomeCrawler(http_client, signer)
-    cookie_tester = CookieTester(http_client, signer)
 
     # CrawlerBridge（复用同一组信号对象）
     crawler_bridge = CrawlerBridge(
@@ -147,11 +153,12 @@ def _cleanup(async_worker: AsyncWorker, conn: sqlite3.Connection) -> None:
         async_worker: 异步工作线程。
         conn: 数据库连接。
     """
-    logger.info("应用退出清理开始")
+    log = get_logger(__name__)
+    log.info("应用退出清理开始")
     async_worker.stop()
     with contextlib.suppress(sqlite3.Error):
         conn.close()
-    logger.info("应用退出清理完成")
+    log.info("应用退出清理完成")
 
 
 def _install_excepthook(error_handler: ErrorHandler) -> None:
@@ -233,6 +240,9 @@ def main() -> None:
     # 8. Bridge 初始化
     download_bridge, crawler_bridge = _create_bridges(conn, async_worker)
     log.info("Bridge 已初始化")
+
+    # 8.1 启动 Scheduler 调度循环（必须在恢复任务前启动）
+    download_bridge.init_scheduler(config.DEFAULT_CONCURRENCY)
 
     # 9. 断点续传恢复
     download_bridge.restore_pending_tasks()

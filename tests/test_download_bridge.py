@@ -56,11 +56,18 @@ def _make_bridge(
     scheduler=None,
     task_item_repo=None,
     task_repo=None,
+    video_parser=None,
+    cookie_repository=None,
 ) -> DownloadBridge:
     """构造 DownloadBridge 实例。"""
     scheduler = scheduler or _make_mock_scheduler()
     task_item_repo = task_item_repo or MagicMock()
+    # 配置默认返回值以适配 _do_restore_pending_tasks 新逻辑（v0.1.0 后会话遗留改动）
+    task_item_repo.reset_downloading_to_paused.return_value = 0
+    task_item_repo.get_by_status.return_value = []
     task_repo = task_repo or MagicMock()
+    video_parser = video_parser or MagicMock()
+    cookie_repository = cookie_repository or MagicMock()
     worker_signals = WorkerSignals()
     control_signals = ControlSignals()
     return DownloadBridge(
@@ -70,6 +77,8 @@ def _make_bridge(
         task_repository=task_repo,
         worker_signals=worker_signals,
         control_signals=control_signals,
+        video_parser=video_parser,
+        cookie_repository=cookie_repository,
     )
 
 
@@ -289,7 +298,7 @@ class TestRestorePendingTasks:
     """断点续传恢复测试。"""
 
     def test_restore_pending_tasks_calls_scheduler(self, qapp, async_worker) -> None:
-        """restore_pending_tasks() → scheduler.restore_pending_tasks() 被提交。"""
+        """restore_pending_tasks() -> _do_restore_pending_tasks 在工作线程执行。"""
         scheduler = _make_mock_scheduler()
         bridge = _make_bridge(qapp, async_worker, scheduler)
 
@@ -298,7 +307,9 @@ class TestRestorePendingTasks:
 
         time.sleep(0.2)
 
-        scheduler.restore_pending_tasks.assert_awaited_once()
+        # 新逻辑：不再调用 scheduler.restore_pending_tasks，而是自行处理恢复
+        # 验证 task_item_repo.reset_downloading_to_paused 被调用
+        bridge._task_item_repo.reset_downloading_to_paused.assert_called_once()
 
     def test_restore_on_app_startup(self, qapp, async_worker) -> None:
         """模拟应用启动：init_scheduler + restore_pending_tasks 顺序调用。"""
@@ -313,7 +324,8 @@ class TestRestorePendingTasks:
 
         scheduler.set_max_concurrent.assert_called_once_with(3)
         scheduler.start.assert_awaited_once()
-        scheduler.restore_pending_tasks.assert_awaited_once()
+        # 新逻辑：restore_pending_tasks 自行处理，不再转发给 scheduler
+        bridge._task_item_repo.reset_downloading_to_paused.assert_called_once()
 
 
 # ==================== 信号连接测试 ====================
