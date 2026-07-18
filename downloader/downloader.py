@@ -32,6 +32,11 @@ import httpx
 from app.logger import get_logger
 from app.models import TaskItem, now_iso
 from app.repositories import TaskItemRepository, TaskRepository
+from downloader.constants import (
+    LARGE_FILE_THRESHOLD,
+    MAX_SEGMENTS,
+    SEGMENT_SIZE,
+)
 from downloader.progress_reporter import ProgressReporter
 
 logger = get_logger(__name__)
@@ -56,14 +61,8 @@ RETRY_BACKOFF_BASE: int = 2
 # 风控限流状态码（与爬虫层一致，触发重试）
 RATE_LIMITED_STATUS_CODES: frozenset[int] = frozenset({461, 412})
 
-# 分片下载：每段目标大小 2MB
-SEGMENT_SIZE: int = 2 * 1024 * 1024
-
-# 分片下载：最大分片数
-MAX_SEGMENTS: int = 8
-
-# 分片下载：大文件阈值，超过此大小启用分片下载
-LARGE_FILE_THRESHOLD: int = 10 * 1024 * 1024
+# v0.1.3：分片下载常量（SEGMENT_SIZE / MAX_SEGMENTS / LARGE_FILE_THRESHOLD）
+# 已移至 downloader/constants.py 集中定义，本模块通过 import 复用
 
 
 @dataclass(frozen=True)

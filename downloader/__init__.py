@@ -3,16 +3,19 @@
 导出进度节流器、单项下载器、任务调度器三大组件及其数据类与常量。
 """
 
+from downloader.constants import (
+    LARGE_FILE_THRESHOLD,
+    LONG_VIDEO_DURATION_THRESHOLD,
+    MAX_SEGMENTS,
+    SEGMENT_SIZE,
+)
 from downloader.downloader import (
     CHUNK_SIZE,
-    LARGE_FILE_THRESHOLD,
     MAX_RETRY_COUNT,
-    MAX_SEGMENTS,
     PERSIST_INTERVAL_BYTES,
     PERSIST_INTERVAL_SECONDS,
     RATE_LIMITED_STATUS_CODES,
     RETRY_BACKOFF_BASE,
-    SEGMENT_SIZE,
     Downloader,
     DownloadResult,
 )
@@ -44,9 +47,11 @@ __all__ = [
     "MAX_RETRY_COUNT",
     "RETRY_BACKOFF_BASE",
     "RATE_LIMITED_STATUS_CODES",
+    # constants（v0.1.3：集中定义）
     "SEGMENT_SIZE",
     "MAX_SEGMENTS",
     "LARGE_FILE_THRESHOLD",
+    "LONG_VIDEO_DURATION_THRESHOLD",
     # scheduler
     "Scheduler",
     "DEFAULT_MAX_CONCURRENT",
