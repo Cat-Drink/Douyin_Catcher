@@ -9,12 +9,12 @@
 
     [56px 标题区: "链接抓取"]
     [输入区: QPlainTextEdit(120px) + 导入文件按钮]
-    [操作行: 开始解析按钮]
+    [操作行: 开始解析按钮          开始下载(N)]  ← v0.1.2：开始下载按钮移至此处
     [提示行（检测到主页链接时）]
     [过滤栏（主页链接时显示）]
     [列表头: 全选 + 已选计数]
     [解析结果列表 QScrollArea]
-    [56px 底部操作栏: 下载目录 + 浏览 + 开始下载(N)]
+    [56px 底部操作栏: 下载目录 + 浏览]  ← v0.1.2：仅保留下载目录（v0.1.3 移除）
 """
 
 from __future__ import annotations
@@ -250,13 +250,20 @@ class FetchPage(QWidget):
         self._input_error_label.setVisible(False)
         content_layout.addWidget(self._input_error_label)
 
-        # 操作行
+        # 操作行：开始解析 + 弹性间距 + 开始下载（v0.1.2：开始下载按钮移位至操作行右侧，
+        # 距右边界 24px，符合用户反馈 #10）
         action_layout = QHBoxLayout()
+        action_layout.setContentsMargins(0, 0, 24, 0)
         self._parse_btn = QPushButton("开始解析")
         self._parse_btn.setObjectName("primaryBtn")
         self._parse_btn.clicked.connect(self._on_parse_clicked)
         action_layout.addWidget(self._parse_btn)
         action_layout.addStretch(1)
+        self._download_btn = QPushButton("开始下载 (0)")
+        self._download_btn.setObjectName("primaryBtn")
+        self._download_btn.setEnabled(False)
+        self._download_btn.clicked.connect(self._on_download_clicked)
+        action_layout.addWidget(self._download_btn)
         content_layout.addLayout(action_layout)
 
         # 主页提示行
@@ -302,7 +309,8 @@ class FetchPage(QWidget):
 
         layout.addWidget(content, 1)
 
-        # 底部操作栏
+        # 底部操作栏：仅保留下载目录与浏览按钮（v0.1.2：开始下载按钮已移至操作行，
+        # 下载目录显示暂保留，v0.1.3 再移除）
         bottom = QWidget()
         bottom.setFixedHeight(56)
         bottom.setStyleSheet("border-top: 1px solid #E5E7EB;")
@@ -318,12 +326,6 @@ class FetchPage(QWidget):
         browse_btn = QPushButton("浏览...")
         browse_btn.clicked.connect(self._on_browse_dir)
         bottom_layout.addWidget(browse_btn)
-
-        self._download_btn = QPushButton("开始下载 (0)")
-        self._download_btn.setObjectName("primaryBtn")
-        self._download_btn.setEnabled(False)
-        self._download_btn.clicked.connect(self._on_download_clicked)
-        bottom_layout.addWidget(self._download_btn)
 
         layout.addWidget(bottom)
 
