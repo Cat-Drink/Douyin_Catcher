@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Literal
 from app.logger import get_logger
 from crawlers import api_spec
 from crawlers.exceptions import VideoNotFoundError
+from downloader.constants import LONG_VIDEO_DURATION_THRESHOLD
 
 if TYPE_CHECKING:
     from crawlers.http_client import HttpClient
@@ -33,6 +34,11 @@ logger = get_logger(__name__)
 
 # 抖音作品类型（与计划文档 11.2 节一致，供 UserHomeCrawler 复用）
 VideoType = Literal["video", "image_set", "long_video"]
+
+
+# 长视频时长阈值（毫秒），由 downloader.constants.LONG_VIDEO_DURATION_THRESHOLD（秒）换算
+# v0.1.3：长视频定义从 > 60 秒改为 ≥ 30 分钟（用户反馈 #12）
+_LONG_VIDEO_DURATION_MS: int = LONG_VIDEO_DURATION_THRESHOLD * 1000
 
 
 # === 数据结构 ===
@@ -105,8 +111,12 @@ class VideoParser:
 
         判断顺序（先命中先返回，见计划文档 3.5 节）:
             1. ``images`` 字段非空（列表长度 > 0） → ``'image_set'``
-            2. ``video.duration`` > 60000 毫秒（> 60 秒） → ``'long_video'``
+            2. ``video.duration`` ≥ 1800000 毫秒（≥ 30 分钟） → ``'long_video'``
             3. 其他情况 → ``'video'``
+
+        v0.1.3：长视频阈值从 ``> 60000`` 毫秒（60 秒）改为
+        ``>= LONG_VIDEO_DURATION_THRESHOLD * 1000`` 毫秒（30 分钟），
+        阈值常量定义在 ``downloader/constants.py``。
 
         参数:
             detail: ``aweme_detail`` 节点。
@@ -118,7 +128,7 @@ class VideoParser:
         if isinstance(images, list) and len(images) > 0:
             return "image_set"
         duration = detail.get("video", {}).get("duration", 0) or 0
-        if duration > 60000:
+        if duration >= _LONG_VIDEO_DURATION_MS:
             return "long_video"
         return "video"
 

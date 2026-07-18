@@ -608,8 +608,8 @@ class TestDetectType:
         assert UserHomeCrawler._detect_type({"images": [{"url_list": ["x"]}]}) == "image_set"
 
     def test_detect_type_long_video(self) -> None:
-        """duration > 60000 → long_video。"""
-        assert UserHomeCrawler._detect_type({"video": {"duration": 60001}}) == "long_video"
+        """v0.1.3：duration ≥ 1800000 毫秒（≥ 30 分钟） → long_video。"""
+        assert UserHomeCrawler._detect_type({"video": {"duration": 1860000}}) == "long_video"
 
     def test_detect_type_video(self) -> None:
         """普通视频 → video。"""
@@ -618,6 +618,22 @@ class TestDetectType:
     def test_detect_type_empty(self) -> None:
         """空 dict → video（兜底）。"""
         assert UserHomeCrawler._detect_type({}) == "video"
+
+    def test_detect_type_duration_exactly_threshold(self) -> None:
+        """v0.1.3：duration 恰为 30 分钟（1800000 毫秒）→ 'long_video'（`>=` 阈值）。"""
+        assert UserHomeCrawler._detect_type({"video": {"duration": 1800000}}) == "long_video"
+
+    def test_detect_type_duration_below_threshold(self) -> None:
+        """v0.1.3：duration 为 29 分钟（1740000 毫秒）→ 'video'。"""
+        assert UserHomeCrawler._detect_type({"video": {"duration": 1740000}}) == "video"
+
+    def test_detect_type_image_set_not_affected_by_duration(self) -> None:
+        """v0.1.3：图集即使 duration ≥ 30 分钟仍为 'image_set'（图集判定优先）。"""
+        aweme = {
+            "images": [{"url_list": ["x"]}],
+            "video": {"duration": 1800000},
+        }
+        assert UserHomeCrawler._detect_type(aweme) == "image_set"
 
 
 class TestBuildPostItem:
@@ -647,10 +663,11 @@ class TestBuildPostItem:
 
     def test_build_long_video_item(self) -> None:
         """长视频 PostItem：duration 显示为 MM:SS。"""
-        aweme = _make_aweme("3", duration=750000)  # 12:30
+        # v0.1.3：长视频阈值改为 ≥ 30 分钟（1800000 毫秒）
+        aweme = _make_aweme("3", duration=1800000)  # 30:00
         item = UserHomeCrawler._build_post_item(aweme)
         assert item.type == "long_video"
-        assert item.duration == "12:30"
+        assert item.duration == "30:00"
 
     def test_build_item_missing_cover(self) -> None:
         """封面缺失 → cover_url 为空字符串。"""

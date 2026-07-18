@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Literal
 from app.logger import get_logger
 from crawlers import api_spec
 from crawlers.exceptions import UserNotFoundError
+from downloader.constants import LONG_VIDEO_DURATION_THRESHOLD
 
 if TYPE_CHECKING:
     from crawlers.http_client import HttpClient
@@ -36,6 +37,11 @@ logger = get_logger(__name__)
 
 # 主页抓取类型过滤（与计划文档 11.2 节一致）
 HomeFilterType = Literal["all", "video", "image_set", "long_video"]
+
+
+# 长视频时长阈值（毫秒），由 downloader.constants.LONG_VIDEO_DURATION_THRESHOLD（秒）换算
+# v0.1.3：长视频定义从 > 60 秒改为 ≥ 30 分钟（用户反馈 #12）
+_LONG_VIDEO_DURATION_MS: int = LONG_VIDEO_DURATION_THRESHOLD * 1000
 
 
 # === 数据结构 ===
@@ -129,14 +135,18 @@ class UserHomeCrawler:
 
         判断顺序:
             1. ``images`` 非空 → ``'image_set'``
-            2. ``video.duration`` > 60000 毫秒 → ``'long_video'``
+            2. ``video.duration`` ≥ 1800000 毫秒（≥ 30 分钟） → ``'long_video'``
             3. 其他 → ``'video'``
+
+        v0.1.3：长视频阈值从 ``> 60000`` 毫秒改为
+        ``>= LONG_VIDEO_DURATION_THRESHOLD * 1000`` 毫秒，
+        阈值常量定义在 ``downloader/constants.py``。
         """
         images = aweme.get("images")
         if isinstance(images, list) and len(images) > 0:
             return "image_set"
         duration = aweme.get("video", {}).get("duration", 0) or 0
-        if duration > 60000:
+        if duration >= _LONG_VIDEO_DURATION_MS:
             return "long_video"
         return "video"
 

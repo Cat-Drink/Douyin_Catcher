@@ -88,14 +88,15 @@ def _normal_video_detail() -> dict:
 
 
 def _long_video_detail() -> dict:
-    """构造长视频（duration > 60s）的 aweme_detail 节点。"""
+    """构造长视频（duration ≥ 30 分钟）的 aweme_detail 节点。"""
     return {
         "aweme_id": "7000000000000000002",
         "desc": "测试长视频",
         "create_time": 1700000100,
         "author": {"nickname": "长视频作者", "sec_uid": "sec_uid_long_002"},
         "video": {
-            "duration": 750000,  # 12:30
+            # v0.1.3：长视频阈值改为 ≥ 30 分钟（1800000 毫秒）
+            "duration": 1800000,  # 30:00
             "play_addr": {"url_list": ["https://v.douyin.com/play/long.mp4"]},
             "cover": {"url_list": ["https://p.douyinpic.com/long_cover.jpg"]},
         },
@@ -189,13 +190,13 @@ class TestParseVideo:
     async def test_parse_long_video(
         self, video_parser: VideoParser, mock_http_client: MagicMock
     ) -> None:
-        """长视频解析（duration > 60s）：type='long_video'，duration 显示 'MM:SS'。"""
+        """长视频解析（duration ≥ 30 分钟）：type='long_video'，duration 显示 'MM:SS'。"""
         mock_http_client.get.return_value = _make_response(
             {"status_code": 0, "aweme_detail": _long_video_detail()}
         )
         info = await video_parser.parse_video("7000000000000000002", "ttwid=fake")
         assert info.type == "long_video"
-        assert info.duration == "12:30"
+        assert info.duration == "30:00"
         assert info.no_watermark_url == "https://v.douyin.com/play/long.mp4"
         assert info.image_urls == []
 
@@ -388,11 +389,11 @@ class TestDetectVideoType:
         assert VideoParser._detect_video_type({"images": [{"url_list": ["x"]}]}) == "image_set"
 
     def test_detect_type_long_video(self) -> None:
-        """duration > 60000 毫秒 → 'long_video'。"""
-        assert VideoParser._detect_video_type({"video": {"duration": 60001}}) == "long_video"
+        """v0.1.3：duration ≥ 1800000 毫秒（≥ 30 分钟） → 'long_video'。"""
+        assert VideoParser._detect_video_type({"video": {"duration": 1860000}}) == "long_video"
 
     def test_detect_type_video(self) -> None:
-        """普通视频（无 images，duration ≤ 60000）→ 'video'。"""
+        """普通视频（无 images，duration < 30 分钟）→ 'video'。"""
         assert VideoParser._detect_video_type({"video": {"duration": 15000}}) == "video"
 
     def test_detect_type_empty_detail(self) -> None:
@@ -401,13 +402,29 @@ class TestDetectVideoType:
 
     def test_detect_type_empty_images_list(self) -> None:
         """images 为空列表 → 进入 duration 判断分支。"""
-        assert VideoParser._detect_video_type({"images": [], "video": {"duration": 750000}}) == (
+        assert VideoParser._detect_video_type({"images": [], "video": {"duration": 1800000}}) == (
             "long_video"
         )
 
-    def test_detect_type_duration_exactly_60000(self) -> None:
-        """duration 恰为 60000（≤ 60 秒边界）→ 'video'。"""
-        assert VideoParser._detect_video_type({"video": {"duration": 60000}}) == "video"
+    def test_detect_type_duration_exactly_threshold(self) -> None:
+        """v0.1.3：duration 恰为 30 分钟（1800000 毫秒）→ 'long_video'（`>=` 阈值）。"""
+        assert VideoParser._detect_video_type({"video": {"duration": 1800000}}) == "long_video"
+
+    def test_detect_type_duration_below_threshold(self) -> None:
+        """v0.1.3：duration 为 29 分钟（1740000 毫秒）→ 'video'。"""
+        assert VideoParser._detect_video_type({"video": {"duration": 1740000}}) == "video"
+
+    def test_detect_type_duration_above_threshold(self) -> None:
+        """v0.1.3：duration 为 31 分钟（1860000 毫秒）→ 'long_video'。"""
+        assert VideoParser._detect_video_type({"video": {"duration": 1860000}}) == "long_video"
+
+    def test_detect_type_image_set_not_affected_by_duration(self) -> None:
+        """v0.1.3：图集即使 duration ≥ 30 分钟仍为 'image_set'（图集判定优先）。"""
+        detail = {
+            "images": [{"url_list": ["x"]}],
+            "video": {"duration": 1800000},
+        }
+        assert VideoParser._detect_video_type(detail) == "image_set"
 
 
 # ==================== 辅助方法测试：参数构造与发布时间 ====================
