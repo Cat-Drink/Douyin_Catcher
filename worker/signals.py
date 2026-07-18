@@ -44,6 +44,11 @@ class WorkerSignals(QObject):
     # task_id，某任务下所有子项完成
     task_completed = Signal(int)
 
+    # v0.1.6：task_id，一批任务项已加入下载队列（用户反馈 #6）
+    # DownloadBridge._do_start_download 中 scheduler.add_task_items 成功后 emit，
+    # 供 FetchPage 在入队成功后清理输入框/结果列表/过滤栏/全选状态
+    download_started = Signal(int)
+
     # === 解析相关 ===
 
     # current（当前已解析数）, total（总链接数）
