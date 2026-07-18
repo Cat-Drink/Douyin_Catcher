@@ -121,6 +121,82 @@ class TestExtractUrl:
         )
 
 
+# ==================== extract_short_urls 测试（v0.1.5） ====================
+
+
+class TestExtractShortUrls:
+    """extract_short_urls 方法测试（v0.1.5：分享文本短链批量提取）。"""
+
+    def test_extract_short_urls_from_share_text(self, url_parser: URLParser) -> None:
+        """用户反馈 #1 示例：完整分享文本提取短链。"""
+        text = (
+            "7.99 OXM:/ z@T.yG :8pm 06/15 怎么远程操控另一台手机 "
+            "# 二次元 # 手机 # 电脑知识 # 玩转数码 # 软件  "
+            "https://v.douyin.com/RNUDiCoVdd4/ 复制此链接，打开Dou音搜索，直接观看视频！"
+        )
+        result = url_parser.extract_short_urls(text)
+        assert result == ["https://v.douyin.com/RNUDiCoVdd4/"]
+
+    def test_extract_short_urls_pure_link(self, url_parser: URLParser) -> None:
+        """纯短链输入 → 返回单元素列表。"""
+        text = "https://v.douyin.com/AbCd123/"
+        assert url_parser.extract_short_urls(text) == ["https://v.douyin.com/AbCd123/"]
+
+    def test_extract_short_urls_multiple_in_one_line(self, url_parser: URLParser) -> None:
+        """单行含多个短链 → 全部提取，保持顺序。"""
+        text = "第一 https://v.douyin.com/Aaa111/ 第二 https://v.douyin.com/Bbb222/"
+        assert url_parser.extract_short_urls(text) == [
+            "https://v.douyin.com/Aaa111/",
+            "https://v.douyin.com/Bbb222/",
+        ]
+
+    def test_extract_short_urls_multi_line(self, url_parser: URLParser) -> None:
+        """多行文本 → 提取所有行的短链。"""
+        text = "https://v.douyin.com/Aaa111/\n" "描述行无链接\n" "https://v.douyin.com/Bbb222/\n"
+        assert url_parser.extract_short_urls(text) == [
+            "https://v.douyin.com/Aaa111/",
+            "https://v.douyin.com/Bbb222/",
+        ]
+
+    def test_extract_short_urls_no_link_returns_empty(self, url_parser: URLParser) -> None:
+        """纯描述文字无短链 → 返回空列表。"""
+        text = "这段文字完全没有链接，只是一段普通描述。"
+        assert url_parser.extract_short_urls(text) == []
+
+    def test_extract_short_urls_empty_string(self, url_parser: URLParser) -> None:
+        """空字符串 → 返回空列表。"""
+        assert url_parser.extract_short_urls("") == []
+
+    def test_extract_short_urls_long_link_not_matched(self, url_parser: URLParser) -> None:
+        """长链（www.douyin.com/video/xxx）不被匹配（仅匹配 v.douyin.com 短链）。"""
+        text = "https://www.douyin.com/video/7646700367584954368"
+        assert url_parser.extract_short_urls(text) == []
+
+    def test_extract_short_urls_without_trailing_slash(self, url_parser: URLParser) -> None:
+        """短链末尾无 / 也识别。"""
+        text = "https://v.douyin.com/AbCd123"
+        assert url_parser.extract_short_urls(text) == ["https://v.douyin.com/AbCd123"]
+
+    def test_extract_short_urls_uppercase_domain(self, url_parser: URLParser) -> None:
+        """大写 V.DOUYIN.COM 也识别。"""
+        text = "HTTPS://V.DOUYIN.COM/AbCd123/"
+        assert url_parser.extract_short_urls(text) == ["HTTPS://V.DOUYIN.COM/AbCd123/"]
+
+    def test_extract_short_urls_preserves_order(self, url_parser: URLParser) -> None:
+        """多个短链按出现顺序返回。"""
+        text = (
+            "https://v.douyin.com/ZZZ999/ "
+            "https://v.douyin.com/Aaa111/ "
+            "https://v.douyin.com/Mmm555/"
+        )
+        result = url_parser.extract_short_urls(text)
+        assert result == [
+            "https://v.douyin.com/ZZZ999/",
+            "https://v.douyin.com/Aaa111/",
+            "https://v.douyin.com/Mmm555/",
+        ]
+
+
 class TestParsedURLDataclass:
     """ParsedURL dataclass 不可变性与字段测试。"""
 

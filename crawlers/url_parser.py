@@ -32,6 +32,14 @@ _URL_PATTERN: re.Pattern[str] = re.compile(
     re.IGNORECASE,
 )
 
+# v0.1.5：抖音短链专用保守匹配正则（用户反馈 #1）
+# 仅匹配 https://v.douyin.com/xxx/ 格式，宁可漏匹配也不要错误匹配描述文字
+# 用于 extract_short_urls 从分享文本中批量提取短链
+_SHORT_URL_PATTERN: re.Pattern[str] = re.compile(
+    r"https?://v\.douyin\.com/[A-Za-z0-9]+/?",
+    re.IGNORECASE,
+)
+
 # 抖音合法域名集合（短链 + 长链）
 # - v.douyin.com：分享短链
 # - www.douyin.com / douyin.com：长链（视频/主页）
@@ -105,6 +113,22 @@ class URLParser:
             if self._is_douyin_url(url):
                 return url
         return None
+
+    def extract_short_urls(self, text: str) -> list[str]:
+        """从文本中提取所有抖音短链（``https://v.douyin.com/xxx/``）。
+
+        v0.1.5：保守匹配，仅匹配 ``v.douyin.com`` 短链格式，宁可漏匹配也
+        不要错误匹配描述文字（用户反馈 #1）。用于多行分享文本批量提取短链。
+
+        参数:
+            text: 原始文本（可能含多行、描述文字、短链）。
+
+        返回:
+            提取到的短链列表（保持出现顺序）；无匹配返回空列表。
+        """
+        if not text:
+            return []
+        return _SHORT_URL_PATTERN.findall(text)
 
     @staticmethod
     def _is_douyin_url(url: str) -> bool:
