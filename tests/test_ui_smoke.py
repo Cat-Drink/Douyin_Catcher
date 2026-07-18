@@ -278,3 +278,101 @@ class TestPages:
             assert hasattr(page, "refresh")
             # 调用 refresh 不应抛异常
             page.refresh()
+
+
+# ==================== FetchPage 信号载荷测试（v0.1.4） ====================
+
+
+class TestFetchPageDownloadSignal:
+    """v0.1.4：FetchPage.download_requested 信号载荷为 list[dict] 测试。"""
+
+    def test_download_signal_emits_list_of_dicts(
+        self, qapp, mock_conn, mock_crawler_bridge
+    ) -> None:
+        """勾选项点击"开始下载"后，信号载荷为 list[dict]，含 aweme_id/title/cover_url 等字段。"""
+        page = FetchPage(mock_crawler_bridge, mock_conn)
+        # 模拟解析结果：构造 2 个 result dict 加入列表
+        results = [
+            {
+                "aweme_id": "aweme_001",
+                "title": "测试视频一",
+                "author": "作者A",
+                "type": "video",
+                "duration": "00:15",
+                "image_count": None,
+                "cover_url": "https://example.com/cover1.jpg",
+            },
+            {
+                "aweme_id": "aweme_002",
+                "title": "测试视频二",
+                "author": "作者B",
+                "type": "image_set",
+                "duration": None,
+                "image_count": 9,
+                "cover_url": "https://example.com/cover2.jpg",
+            },
+        ]
+        for r in results:
+            page._add_result_widget(r)
+
+        captured: list = []
+        page.download_requested.connect(lambda items: captured.append(items))
+
+        # 全选并点击下载
+        page._select_all_chk.setChecked(True)
+        page._on_download_clicked()
+
+        assert len(captured) == 1
+        emitted = captured[0]
+        assert isinstance(emitted, list)
+        assert len(emitted) == 2
+        assert all(isinstance(item, dict) for item in emitted)
+        assert emitted[0]["aweme_id"] == "aweme_001"
+        assert emitted[0]["title"] == "测试视频一"
+        assert emitted[0]["cover_url"] == "https://example.com/cover1.jpg"
+        assert emitted[1]["aweme_id"] == "aweme_002"
+        assert emitted[1]["cover_url"] == "https://example.com/cover2.jpg"
+        page.deleteLater()
+
+    def test_download_signal_empty_when_no_selection(
+        self, qapp, mock_conn, mock_crawler_bridge
+    ) -> None:
+        """无勾选时点击下载不发射信号。"""
+        page = FetchPage(mock_crawler_bridge, mock_conn)
+        page._add_result_widget(
+            {
+                "aweme_id": "aweme_x",
+                "title": "x",
+                "author": "",
+                "type": "video",
+                "duration": None,
+                "image_count": None,
+                "cover_url": "",
+            }
+        )
+        captured: list = []
+        page.download_requested.connect(lambda items: captured.append(items))
+        # 不勾选，直接点击下载
+        page._on_download_clicked()
+        assert captured == []
+        page.deleteLater()
+
+    def test_result_item_widget_exposes_result_data(
+        self, qapp, mock_conn, mock_crawler_bridge
+    ) -> None:
+        """ResultItemWidget.result_data 返回完整 dict（v0.1.4）。"""
+        from ui.pages.fetch_page import ResultItemWidget
+
+        result = {
+            "aweme_id": "aweme_99",
+            "title": "标题",
+            "author": "作者",
+            "type": "video",
+            "duration": "00:30",
+            "image_count": None,
+            "cover_url": "https://example.com/c.jpg",
+        }
+        widget = ResultItemWidget(result)
+        assert widget.result_data == result
+        assert widget.aweme_id == "aweme_99"
+        widget.deleteLater()
