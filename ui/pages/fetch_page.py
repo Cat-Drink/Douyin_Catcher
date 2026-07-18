@@ -17,6 +17,10 @@
 
 v0.1.3：移除底部下载目录显示与浏览按钮，下载目录统一在设置页配置
 （用户反馈 #9）。
+
+v0.1.7：链接解析流程改为预览模式——解析后展示 PreviewItemWidget 列表，
+图集类型可展开预览所有图片缩略图并支持图片级勾选（用户反馈 #7）。
+原 ResultItemWidget 保留供主页抓取流程（PostItem）使用。
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QFileDialog,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
@@ -37,6 +42,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.logger import get_logger
+from app.preview_models import PreviewItem
 from ui.widgets.filter_bar import FilterBar
 from ui.widgets.loading_overlay import LoadingOverlay
 from ui.widgets.thumbnail_loader import ThumbnailLoader
@@ -181,6 +187,307 @@ class ResultItemWidget(QWidget):
         self._chk.setChecked(selected)
 
 
+class PreviewItemWidget(QWidget):
+    """预览结果行组件（v0.1.7）。
+
+    与 ``ResultItemWidget`` 区别：图集类型可展开显示所有图片缩略图，
+    支持图片级勾选；视频/长视频类型行为与 ``ResultItemWidget`` 一致。
+
+    水平排列::
+
+        [整体勾选] [缩略图 48x48] [标题] [作者] [类型] [时长/N张图] [展开按钮（图集）]
+
+    图集展开后::
+
+        [图片勾选 + 缩略图 48x48] × N（网格布局）
+
+    信号:
+        selection_changed: 整体勾选状态变化，传 is_selected。
+    """
+
+    selection_changed = Signal(bool)
+
+    # 图集展开后每行的图片缩略图数量
+    _IMAGES_PER_ROW = 6
+
+    def __init__(self, result: dict, parent: QWidget | None = None) -> None:
+        """初始化预览结果行。
+
+        Args:
+            result: 预览结果 dict，含 aweme_id/title/author/type/duration/
+                image_count/cover_url/image_urls/video_url/author_sec_id
+                等字段（来自 ``PreviewItem.to_result_dict``）。
+            parent: 父控件。
+        """
+        super().__init__(parent)
+        self._result = result
+        self._thumb_loader: ThumbnailLoader | None = None
+        # 图片级勾选状态：图集类型下，每张图对应的 ThumbnailLoader 与勾选框
+        self._image_thumb_loaders: list[ThumbnailLoader] = []
+        self._image_chks: list[QCheckBox] = []
+        # 防递归标志位：set_selected 同步图片勾选时不触发 selection_changed
+        self._syncing: bool = False
+        # 图集展开状态标志位（避免依赖 isVisible() 在 widget 未 show 时不可靠）
+        self._expanded: bool = False
+        self._setup_ui()
+        self._fill_data()
+
+    def _setup_ui(self) -> None:
+        """构建行布局。"""
+        self.setFixedHeight(56)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # 主行
+        main_row = QWidget()
+        main_layout = QHBoxLayout(main_row)
+        main_layout.setContentsMargins(12, 6, 12, 6)
+        main_layout.setSpacing(12)
+
+        # 整体勾选框
+        self._chk = QCheckBox()
+        self._chk.toggled.connect(self._on_chk_toggled)
+        main_layout.addWidget(self._chk)
+
+        # 封面缩略图
+        self._thumb = QLabel()
+        self._thumb.setFixedSize(48, 48)
+        self._thumb.setScaledContents(True)
+        self._thumb.setStyleSheet("background-color: #E5E7EB; border-radius: 4px;")
+        main_layout.addWidget(self._thumb)
+
+        # 标题
+        self._title = QLabel()
+        self._title.setStyleSheet("font-size: 14px; font-weight: 500;")
+        self._title.setMinimumWidth(200)
+        main_layout.addWidget(self._title, 1)
+
+        # 作者
+        self._author = QLabel()
+        self._author.setStyleSheet("color: #6B7280; font-size: 12px;")
+        main_layout.addWidget(self._author)
+
+        # 类型标签
+        self._type_label = QLabel()
+        self._type_label.setStyleSheet("padding: 2px 8px; border-radius: 4px; font-size: 12px;")
+        main_layout.addWidget(self._type_label)
+
+        # 时长/图片数
+        self._duration = QLabel()
+        self._duration.setStyleSheet("color: #6B7280; font-size: 12px;")
+        main_layout.addWidget(self._duration)
+
+        # 展开按钮（仅图集类型显示）
+        self._expand_btn = QPushButton("展开")
+        self._expand_btn.setObjectName("linkBtn")
+        self._expand_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._expand_btn.setFlat(True)
+        self._expand_btn.clicked.connect(self._on_expand_toggled)
+        self._expand_btn.setVisible(False)
+        main_layout.addWidget(self._expand_btn)
+
+        layout.addWidget(main_row)
+
+        # 图片网格容器（图集展开时显示，默认隐藏）
+        self._images_widget = QWidget()
+        self._images_widget.setVisible(False)
+        self._images_layout = QGridLayout(self._images_widget)
+        self._images_layout.setContentsMargins(60, 4, 12, 8)
+        self._images_layout.setSpacing(8)
+        layout.addWidget(self._images_widget)
+
+    def _fill_data(self) -> None:
+        """填充数据到各控件。"""
+        self._title.setText(self._result.get("title", "") or "未命名")
+        self._author.setText(self._result.get("author", "") or "")
+
+        # 类型标签
+        item_type = self._result.get("type", "video")
+        tag_text, tag_obj = _TYPE_TAG_MAP.get(item_type, ("视频", "tagVideo"))
+        self._type_label.setText(tag_text)
+        self._type_label.setObjectName(tag_obj)
+
+        # 时长/图片数
+        duration = self._result.get("duration")
+        image_count = self._result.get("image_count")
+        if duration:
+            self._duration.setText(duration)
+        elif image_count:
+            self._duration.setText(f"{image_count}张图")
+        else:
+            self._duration.setText("")
+
+        # 封面缩略图异步加载
+        cover_url = self._result.get("cover_url", "")
+        if cover_url:
+            self._thumb_loader = ThumbnailLoader(self)
+            self._thumb_loader.loaded.connect(self._on_thumb_loaded)
+            self._thumb_loader.load(cover_url, (48, 48))
+
+        # 图集类型：构建图片网格 + 显示展开按钮
+        image_urls = self._result.get("image_urls") or []
+        if item_type == "image_set" and image_urls:
+            self._expand_btn.setVisible(True)
+            self._build_image_grid(image_urls)
+            # 图集默认整体勾选（即所有图片勾选）
+            self._chk.setChecked(True)
+
+    def _build_image_grid(self, image_urls: list[str]) -> None:
+        """构建图片网格（每张图含勾选框 + 缩略图）。
+
+        Args:
+            image_urls: 图片直链列表
+        """
+        for i, url in enumerate(image_urls):
+            chk = QCheckBox()
+            chk.setChecked(True)  # 默认全选
+            chk.toggled.connect(self._on_image_chk_toggled)
+            row = i // self._IMAGES_PER_ROW
+            col = (i % self._IMAGES_PER_ROW) * 2
+            self._images_layout.addWidget(chk, row, col)
+
+            thumb = QLabel()
+            thumb.setFixedSize(48, 48)
+            thumb.setScaledContents(True)
+            thumb.setStyleSheet("background-color: #E5E7EB; border-radius: 4px;")
+            self._images_layout.addWidget(thumb, row, col + 1)
+
+            loader = ThumbnailLoader(self)
+            loader.loaded.connect(lambda pm, t=thumb: self._on_image_thumb_loaded(pm, t))
+            loader.load(url, (48, 48))
+            self._image_thumb_loaders.append(loader)
+            self._image_chks.append(chk)
+
+    def _on_thumb_loaded(self, pixmap) -> None:
+        """封面缩略图加载完成。"""
+        from PySide6.QtGui import QPixmap
+
+        if isinstance(pixmap, QPixmap) and not pixmap.isNull():
+            self._thumb.setPixmap(pixmap)
+
+    def _on_image_thumb_loaded(self, pixmap, thumb: QLabel) -> None:
+        """图片缩略图加载完成。"""
+        from PySide6.QtGui import QPixmap
+
+        if isinstance(pixmap, QPixmap) and not pixmap.isNull():
+            thumb.setPixmap(pixmap)
+
+    def _on_chk_toggled(self, checked: bool) -> None:
+        """整体勾选框状态变化。
+
+        图集类型：同步所有图片勾选框；视频类型：仅自身。
+        """
+        if self._syncing:
+            return
+        self._syncing = True
+        try:
+            for chk in self._image_chks:
+                chk.setChecked(checked)
+        finally:
+            self._syncing = False
+        self.selection_changed.emit(checked)
+
+    def _on_image_chk_toggled(self, _checked: bool) -> None:
+        """图片勾选框状态变化：同步整体勾选框。
+
+        图集类型：至少一张图勾选则整体勾选；全不选则取消。
+        """
+        if self._syncing:
+            return
+        any_selected = any(chk.isChecked() for chk in self._image_chks)
+        self._syncing = True
+        try:
+            self._chk.setChecked(any_selected)
+        finally:
+            self._syncing = False
+        self.selection_changed.emit(any_selected)
+
+    def _on_expand_toggled(self) -> None:
+        """展开按钮点击：切换图片网格显示。"""
+        # 用显式 _expanded 标志位判断状态，避免依赖 isVisible()
+        # （widget 未 show 时 isVisible() 总是 False，会导致二次点击无法收起）
+        self._expanded = not self._expanded
+        self._images_widget.setVisible(self._expanded)
+        self._expand_btn.setText("收起" if self._expanded else "展开")
+        # 展开/收起后调整整体高度
+        if self._expanded:
+            # 展开时取消固定高度限制
+            self.setMaximumHeight(16777215)
+            self.setMinimumHeight(56)
+        else:
+            self.setFixedHeight(56)
+
+    @property
+    def aweme_id(self) -> str:
+        """返回结果项的 aweme_id。"""
+        return self._result.get("aweme_id", "")
+
+    @property
+    def result_data(self) -> dict:
+        """返回结果项的完整 dict（含图片级勾选状态）。
+
+        v0.1.7：图集类型额外携带 ``selected_image_indices`` 字段，
+        值为勾选图片索引的 JSON 数组字符串（如 ``"[0,1,3]"``）；
+        空字符串表示全选（与 DB schema 一致）。
+        """
+        data = dict(self._result)
+        data["selected_image_indices"] = self.get_selected_image_indices_str()
+        return data
+
+    def is_selected(self) -> bool:
+        """返回整体勾选状态。
+
+        图集类型：至少一张图勾选则为 True；视频类型：勾选框状态。
+        """
+        if self._image_chks:
+            return any(chk.isChecked() for chk in self._image_chks)
+        return self._chk.isChecked()
+
+    def set_selected(self, selected: bool) -> None:
+        """设置勾选状态（供全选用）。
+
+        图集类型：同步所有图片勾选框；视频类型：仅设置整体勾选框。
+
+        Args:
+            selected: 是否选中。
+        """
+        self._syncing = True
+        try:
+            self._chk.setChecked(selected)
+            for chk in self._image_chks:
+                chk.setChecked(selected)
+        finally:
+            self._syncing = False
+
+    def get_selected_image_indices(self) -> list[int]:
+        """返回勾选的图片索引列表。
+
+        图集类型：返回勾选图片的索引；视频类型：返回空列表。
+        空列表与"全选"在 ``selected_image_indices`` 字段中都用空字符串表示，
+        但本方法仅返回勾选索引，由调用方决定序列化方式。
+        """
+        return [i for i, chk in enumerate(self._image_chks) if chk.isChecked()]
+
+    def get_selected_image_indices_str(self) -> str:
+        """返回勾选图片索引的 JSON 数组字符串。
+
+        - 视频类型：返回空字符串（表示全选/不适用）
+        - 图集类型全选：返回空字符串（与 DB schema 约定一致，空表示全选）
+        - 图集类型部分选：返回 ``"[0,1,3]"`` 格式
+        """
+        if not self._image_chks:
+            return ""
+        indices = self.get_selected_image_indices()
+        total = len(self._image_chks)
+        # 全选时用空字符串表示，节省存储且与 DB schema 约定一致
+        if len(indices) == total:
+            return ""
+        import json
+
+        return json.dumps(indices)
+
+
 class FetchPage(QWidget):
     """链接抓取页。
 
@@ -218,7 +525,8 @@ class FetchPage(QWidget):
         super().__init__(parent)
         self._bridge = crawler_bridge
         self._conn = conn
-        self._result_widgets: list[ResultItemWidget] = []
+        # v0.1.7：列表可容纳 ResultItemWidget（主页抓取流程）与 PreviewItemWidget（链接预览流程）
+        self._result_widgets: list[ResultItemWidget | PreviewItemWidget] = []
         self._is_parsing = False
         self._is_fetching = False
         self._loading_overlay = LoadingOverlay(self)
@@ -353,6 +661,9 @@ class FetchPage(QWidget):
         signals.parse_progress.connect(self._on_parse_progress)
         signals.parse_completed.connect(self.on_parse_completed)
         signals.parse_failed.connect(self.on_parse_failed)
+        # v0.1.7：预览解析（含图片直链）
+        signals.preview_completed.connect(self.on_preview_completed)
+        signals.preview_failed.connect(self.on_preview_failed)
         signals.home_fetch_progress.connect(self.on_home_fetch_progress)
         signals.home_fetch_completed.connect(self.on_home_fetch_completed)
         signals.home_fetch_failed.connect(self.on_home_fetch_failed)
@@ -460,6 +771,34 @@ class FetchPage(QWidget):
         self._loading_overlay.hide()
         self._show_input_error(f"解析失败：{reason}")
 
+    def on_preview_completed(self, items: list) -> None:
+        """预览解析完成（v0.1.7）。
+
+        与 ``on_parse_completed`` 区别：接收 ``PreviewItem`` 列表，每项含
+        完整的标题/封面/类型/图片直链/视频直链，渲染为 ``PreviewItemWidget``，
+        图集类型可展开预览图片并支持图片级勾选（用户反馈 #7）。
+
+        Args:
+            items: ``list[PreviewItem]``，预览解析结果
+        """
+        self._is_parsing = False
+        self._parse_btn.setText("开始解析")
+        self._loading_overlay.hide()
+        self._clear_results()
+
+        for item in items:
+            self._add_preview_widget(item)
+
+        self._update_result_visibility()
+        self._update_selected_count()
+
+    def on_preview_failed(self, reason: str) -> None:
+        """预览解析失败（v0.1.7）。"""
+        self._is_parsing = False
+        self._parse_btn.setText("开始解析")
+        self._loading_overlay.hide()
+        self._show_input_error(f"解析失败：{reason}")
+
     def on_home_fetch_progress(self, current: int, total: int) -> None:
         """主页抓取进度。"""
         if total > 0:
@@ -531,6 +870,19 @@ class FetchPage(QWidget):
         """添加结果行到列表。"""
         widget = ResultItemWidget(result)
         # v0.1.6：单项勾选变化时同步全选复选框三态（用户反馈 #4）
+        widget.selection_changed.connect(self._on_item_selection_changed)
+        count = self._list_layout.count()
+        self._list_layout.insertWidget(count - 1, widget)
+        self._result_widgets.append(widget)
+        return widget
+
+    def _add_preview_widget(self, item: PreviewItem) -> PreviewItemWidget:
+        """添加预览结果行到列表（v0.1.7）。
+
+        与 ``_add_result_widget`` 区别：接收 ``PreviewItem``，渲染为
+        ``PreviewItemWidget``（支持图集展开与图片级勾选）。
+        """
+        widget = PreviewItemWidget(item.to_result_dict())
         widget.selection_changed.connect(self._on_item_selection_changed)
         count = self._list_layout.count()
         self._list_layout.insertWidget(count - 1, widget)
