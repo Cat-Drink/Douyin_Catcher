@@ -179,8 +179,11 @@ class TaskItemWidget(QWidget):
         if item.cover_url:
             self._load_thumbnail(item.cover_url)
 
-        # 进度
-        self.update_progress(item.downloaded_bytes, item.total_bytes)
+        # 进度：图集类型跳过字节进度初始化（downloaded_bytes/total_bytes
+        # 是字节数，非张数），交由 update_status 显示状态文字，ProgressReporter
+        # 在下载过程中按"M/N 张"粒度上报。
+        if item.type != "image_set":
+            self.update_progress(item.downloaded_bytes, item.total_bytes)
 
         # 状态
         self.update_status(item.status, item.fail_reason)
@@ -235,10 +238,26 @@ class TaskItemWidget(QWidget):
     def update_progress(self, downloaded: int, total: int) -> None:
         """更新进度条与百分比文字。
 
+        v0.1.7：图集类型（``image_set``）显示"已下载 M/N 张"，
+        其中 ``downloaded``/``total`` 由 ``_download_image_set``
+        按图片张数粒度上报（非字节数）；其他类型保持原字节数百分比逻辑。
+
         Args:
-            downloaded: 已下载字节数。
-            total: 总字节数。
+            downloaded: 已下载数量（图集为张数，其他为字节数）。
+            total: 总数量（图集为总张数，其他为总字节数）。
         """
+        if self._task_item.type == "image_set":
+            # 图集类型：显示"已下载 M/N 张"
+            if total > 0:
+                percent = int(downloaded * 100 / total)
+                self._progress_bar.setRange(0, 100)
+                self._progress_bar.setValue(percent)
+                self._percent_label.setText(f"已下载 {downloaded}/{total} 张")
+            else:
+                self._progress_bar.setRange(0, 0)
+                self._percent_label.setText("等待中")
+            return
+
         if total > 0:
             percent = int(downloaded * 100 / total)
             self._progress_bar.setRange(0, 100)

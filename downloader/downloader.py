@@ -539,6 +539,7 @@ class Downloader:
         url: str,
         final_path: Path,
         mark_status: bool = True,
+        report_progress: bool = True,
     ) -> DownloadResult:
         """单文件下载（视频/长视频/图集单张）。
 
@@ -551,6 +552,9 @@ class Downloader:
             final_path: 最终文件路径
             mark_status: 是否在完成/失败时标记 task_items 状态。
                 图集子下载设为 False，由 _download_image_set 统一标记。
+            report_progress: 是否上报字节级进度。
+                v0.1.7：图集子下载设为 False，由 _download_image_set
+                按"M/N 张"粒度上报，避免字节进度覆盖张数进度。
 
         Returns:
             下载结果
@@ -618,6 +622,7 @@ class Downloader:
                             task_item,
                             downloaded_bytes,
                             total_bytes,
+                            report_progress=report_progress,
                         )
 
                     # 下载完成 → 重命名 → 标记完成
@@ -665,6 +670,7 @@ class Downloader:
         task_item: TaskItem,
         downloaded_bytes: int,
         total_bytes: int,
+        report_progress: bool = True,
     ) -> int:
         """流式接收响应体写入 .part 文件。
 
@@ -677,6 +683,9 @@ class Downloader:
             task_item: 任务项
             downloaded_bytes: 起始已下载字节数（断点续传）
             total_bytes: 文件总字节数
+            report_progress: 是否上报字节级进度。
+                v0.1.7：图集子下载传 False，避免覆盖 _download_image_set
+                按"M/N 张"粒度上报的进度。
 
         Returns:
             最终已下载字节数
@@ -693,11 +702,12 @@ class Downloader:
                     f.write(chunk)
                     downloaded_bytes += len(chunk)
                     # 更新进度（节流器内部去重）
-                    self._progress_reporter.update(
-                        task_item.id,
-                        downloaded_bytes,
-                        total_bytes,
-                    )
+                    if report_progress:
+                        self._progress_reporter.update(
+                            task_item.id,
+                            downloaded_bytes,
+                            total_bytes,
+                        )
                     # 检查持久化条件：5 秒 或 1MB
                     now = time.monotonic()
                     if (
@@ -813,6 +823,11 @@ class Downloader:
         对每个 URL 创建 _download_single_file 子任务，asyncio.gather 并发执行。
         每个子任务受总 Semaphore 约束。任一失败 → 整个图集标记 failed。
 
+        v0.1.7：子下载设 ``report_progress=False``，由本方法按"M/N 张"粒度
+        上报进度，避免字节级进度覆盖张数进度。每张图片子下载完成时调用
+        ``progress_reporter.update(task_item.id, 已下载张数, 总张数)``，
+        UI 端 ``TaskItemWidget`` 据此显示"已下载 M/N 张"。
+
         Args:
             task_item: 任务项
             urls: 图片直链列表
@@ -826,12 +841,36 @@ class Downloader:
             task_item.id,
             len(urls),
         )
-        tasks: list = []
-        for i, url in enumerate(urls, 1):
+        total_images = len(urls)
+        # 初始进度：0 张已完成
+        self._progress_reporter.update(task_item.id, 0, total_images)
+
+        # 已完成图片数计数器与锁（gather 并发完成回调需同步）
+        completed_count = 0
+        completed_lock = asyncio.Lock()
+
+        async def _download_one(i: int, url: str) -> DownloadResult:
+            nonlocal completed_count
             final_path = self._get_final_path(task_item, url, index=i)
             final_path.parent.mkdir(parents=True, exist_ok=True)
-            tasks.append(self._download_single_file(task_item, url, final_path, mark_status=False))
+            result = await self._download_single_file(
+                task_item,
+                url,
+                final_path,
+                mark_status=False,
+                report_progress=False,
+            )
+            if result.success:
+                async with completed_lock:
+                    completed_count += 1
+                    self._progress_reporter.update(
+                        task_item.id,
+                        completed_count,
+                        total_images,
+                    )
+            return result
 
+        tasks: list = [_download_one(i, url) for i, url in enumerate(urls, 1)]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # 检查结果：任一失败 → 整个图集失败
