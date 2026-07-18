@@ -65,8 +65,7 @@ _CHUNK_OPTIONS: list[tuple[str, str]] = [
     ("4 MB", "4194304"),
 ]
 
-# 应用版本与开源仓库
-_APP_VERSION = "v0.1.0"
+# 应用开源仓库链接（版本号从 ui.main_window._APP_VERSION 延迟导入，避免循环依赖）
 _REPO_URL = "https://github.com/Evil0ctal/Douyin_TikTok_Download_API"
 
 
@@ -272,11 +271,13 @@ class SettingsPage(QWidget):
 
     def _create_about_card(self) -> QFrame:
         """关于卡片。"""
+        from ui.main_window import _APP_VERSION
+
         frame, layout = self._create_card("关于")
 
         about_text = (
             f"抖音抓取器 (Douyin_Catcher)\n"
-            f"版本: {_APP_VERSION}\n"
+            f"版本: v{_APP_VERSION}\n"
             f"设计参考: Evil0ctal/Douyin_TikTok_Download_API"
         )
         about_label = QLabel(about_text)

@@ -31,9 +31,6 @@ from app.logger import get_logger
 
 logger = get_logger(__name__)
 
-# 应用版本号（与 main.py 的 APP_VERSION 保持一致）
-_NAV_VERSION = "v0.0.7"
-
 
 @dataclass(frozen=True)
 class NavItem:
@@ -102,8 +99,10 @@ class NavBar(QWidget):
         # 弹性间距，将版本号推到底部
         layout.addStretch(1)
 
-        # 底部版本号
-        version_label = QLabel(_NAV_VERSION)
+        # 底部版本号（延迟导入避免循环依赖，版本号单一来源为 ui.main_window._APP_VERSION）
+        from ui.main_window import _APP_VERSION
+
+        version_label = QLabel(f"v{_APP_VERSION}")
         version_label.setObjectName("navVersion")
         layout.addWidget(version_label)
 
