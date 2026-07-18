@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QFontMetrics, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -79,6 +79,8 @@ class TaskItemWidget(QWidget):
         super().__init__(parent)
         self._task_item = task_item
         self._thumb_loader: ThumbnailLoader | None = None
+        # v0.1.4：保存未省略的原始标题，供 resizeEvent 重新计算省略
+        self._full_title: str = ""
         self._setup_ui()
         self.update_from_task_item(task_item)
 
@@ -101,6 +103,9 @@ class TaskItemWidget(QWidget):
         info_layout.setSpacing(4)
         self._title_label = QLabel()
         self._title_label.setObjectName("taskTitle")
+        # v0.1.4：标题单行显示，超长由 resizeEvent 用 QFontMetrics.elidedText 省略
+        self._title_label.setWordWrap(False)
+        self._title_label.setTextFormat(Qt.TextFormat.PlainText)
         info_layout.addWidget(self._title_label)
         self._meta_label = QLabel()
         self._meta_label.setObjectName("taskMeta")
@@ -145,8 +150,14 @@ class TaskItemWidget(QWidget):
         """
         self._task_item = item
 
-        # 标题
-        self._title_label.setText(item.title or "未命名")
+        # v0.1.4 标题：优先用 title；为空时回退到 "未命名 (aweme_id)"，再兜底 "未命名"
+        if item.title:
+            self._full_title = item.title
+        elif item.aweme_id:
+            self._full_title = f"未命名 ({item.aweme_id})"
+        else:
+            self._full_title = "未命名"
+        self._apply_elided_title()
 
         # 元信息：作者·时长
         meta_parts: list[str] = []
@@ -173,6 +184,37 @@ class TaskItemWidget(QWidget):
 
         # 状态
         self.update_status(item.status, item.fail_reason)
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        """v0.1.4：宽度变化时重新计算标题省略。
+
+        Args:
+            event: Qt resize 事件。
+        """
+        super().resizeEvent(event)
+        self._apply_elided_title()
+
+    def _apply_elided_title(self) -> None:
+        """根据当前 ``_title_label`` 宽度对 ``_full_title`` 做省略显示。
+
+        v0.1.4：QLabel 默认不省略，宽度不足时会换行（已禁用 word wrap）或截断。
+        使用 ``QFontMetrics.elidedText`` 在右端补 "…" 实现优雅省略。
+        """
+        if not self._full_title:
+            self._title_label.setText("")
+            return
+        label_width = self._title_label.width()
+        if label_width <= 0:
+            # widget 尚未布局完成，先显示完整标题，待 resizeEvent 再省略
+            self._title_label.setText(self._full_title)
+            return
+        font_metrics = QFontMetrics(self._title_label.font())
+        elided = font_metrics.elidedText(
+            self._full_title,
+            Qt.TextElideMode.ElideRight,
+            label_width,
+        )
+        self._title_label.setText(elided)
 
     def _load_thumbnail(self, url: str) -> None:
         """异步加载缩略图。
