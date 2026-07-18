@@ -146,13 +146,5 @@ def cleanup_cookie_traces() -> None:
     """
     yield
     # session 结束后清理 Cookie 文件
-    # 临时禁用：用户要求保留 .test_*.txt 文件以便多次集成测试
-    # for path in (
-    #     _COOKIE_PATH,
-    #     _SEC_USER_ID_PATH,
-    #     _AWEME_ID_PATH,
-    #     _IMAGE_SET_AWEME_ID_PATH,
-    #     _LONG_VIDEO_AWEME_ID_PATH,
-    # ):
-    #     if path.exists():
-    #         path.unlink()
+    # 已按用户决策永久禁用：保留 .test_*.txt 供多次集成测试复用
+    # 如需重新启用，请先确认不会误删本地配置文件
