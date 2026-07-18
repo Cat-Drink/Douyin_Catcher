@@ -161,7 +161,7 @@ class TestParse:
         assert progress[1] == (2, 2)
 
     def test_start_parse_emits_parse_failed_on_exception(self, qapp, async_worker) -> None:
-        """url_parser.parse 抛异常 → parse_failed emit 原因。"""
+        """v0.1.5：单行输入且解析失败 → parse_failed emit 全部失败原因。"""
         url_parser = _make_mock_url_parser()
         url_parser.parse = AsyncMock(side_effect=InvalidURLFormatError("无效链接"))
         bridge = _make_bridge(qapp, async_worker, url_parser=url_parser)
@@ -174,7 +174,8 @@ class TestParse:
         qapp.processEvents()
 
         assert len(received) == 1
-        assert "无效链接" in received[0]
+        # v0.1.5：单行全部失败时消息格式为 "全部 N 行链接均解析失败"
+        assert "全部 1 行" in received[0]
 
     def test_start_parse_single_link(self, qapp, async_worker) -> None:
         """单链接文本解析正常。"""
@@ -203,6 +204,86 @@ class TestParse:
 
         assert len(received) == 1
         assert received[0] == []
+
+    def test_start_parse_skips_invalid_lines(self, qapp, async_worker) -> None:
+        """v0.1.5：多行混合输入（含无效行）→ 跳过无效行，parse_completed emit 有效结果。"""
+        # mock url_parser.parse：第二行抛 InvalidURLFormatError
+        url_parser = _make_mock_url_parser()
+        call_count = [0]
+
+        async def _parse(line):
+            call_count[0] += 1
+            if "invalid" in line:
+                raise InvalidURLFormatError(f"无效链接: {line}")
+            return _make_parsed_url(url=line, aweme_id=str(call_count[0]))
+
+        url_parser.parse = AsyncMock(side_effect=_parse)
+        bridge = _make_bridge(qapp, async_worker, url_parser=url_parser)
+
+        received: list[list] = []
+        failed: list[str] = []
+        bridge._worker_signals.parse_completed.connect(lambda r: received.append(r))
+        bridge._worker_signals.parse_failed.connect(lambda r: failed.append(r))
+
+        text = "https://www.douyin.com/video/123\ninvalid line\nhttps://www.douyin.com/video/456"
+        bridge.on_start_parse(text)
+        time.sleep(0.5)
+        qapp.processEvents()
+
+        # 应发射 parse_completed（不发射 parse_failed）
+        assert len(received) == 1
+        assert len(failed) == 0
+        # 2 条有效结果（跳过 invalid line）
+        assert len(received[0]) == 2
+
+    def test_start_parse_all_lines_failed_emits_parse_failed(self, qapp, async_worker) -> None:
+        """v0.1.5：全部行均失败 → parse_failed emit 整体失败原因。"""
+        url_parser = _make_mock_url_parser()
+        url_parser.parse = AsyncMock(side_effect=InvalidURLFormatError("无效链接"))
+        bridge = _make_bridge(qapp, async_worker, url_parser=url_parser)
+
+        received: list[list] = []
+        failed: list[str] = []
+        bridge._worker_signals.parse_completed.connect(lambda r: received.append(r))
+        bridge._worker_signals.parse_failed.connect(lambda r: failed.append(r))
+
+        text = "invalid1\ninvalid2"
+        bridge.on_start_parse(text)
+        time.sleep(0.5)
+        qapp.processEvents()
+
+        # 全部失败 → parse_failed（不发射 parse_completed）
+        assert len(received) == 0
+        assert len(failed) == 1
+        assert "2 行" in failed[0]
+
+    def test_start_parse_mixed_valid_invalid_progress(self, qapp, async_worker) -> None:
+        """v0.1.5：混合输入的 parse_progress 仍按总行数报告。"""
+        url_parser = _make_mock_url_parser()
+
+        async def _parse(line):
+            if "invalid" in line:
+                raise InvalidURLFormatError("无效")
+            return _make_parsed_url(url=line)
+
+        url_parser.parse = AsyncMock(side_effect=_parse)
+        bridge = _make_bridge(qapp, async_worker, url_parser=url_parser)
+
+        progress: list[tuple[int, int]] = []
+        bridge._worker_signals.parse_progress.connect(
+            lambda cur, total: progress.append((cur, total))
+        )
+
+        text = "https://www.douyin.com/video/1\ninvalid\nhttps://www.douyin.com/video/2"
+        bridge.on_start_parse(text)
+        time.sleep(0.5)
+        qapp.processEvents()
+
+        # 3 行 → 3 次 progress，total 始终为 3
+        assert len(progress) == 3
+        assert progress[0] == (1, 3)
+        assert progress[1] == (2, 3)
+        assert progress[2] == (3, 3)
 
 
 # ==================== 取消解析测试 ====================

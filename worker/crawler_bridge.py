@@ -148,8 +148,10 @@ class CrawlerBridge(QObject):
     async def _do_parse(self, text: str) -> None:
         """工作线程执行链接解析。
 
-        多链接文本逐行解析，报告进度，完成后发射 ``parse_completed``。
-        异常时发射 ``parse_failed``。取消时不发射失败信号。
+        v0.1.5：多行容错——逐行解析，跳过无法识别的行（不抛异常、不中断整体
+        流程）。某行解析失败时记录 warning 并继续下一行（用户反馈 #1）。
+        完成后发射 ``parse_completed``；全部行均失败时发射 ``parse_failed``。
+        取消时不发射失败信号。
 
         Args:
             text: 用户粘贴的链接文本
@@ -159,12 +161,26 @@ class CrawlerBridge(QObject):
             links = [line.strip() for line in lines if line.strip()]
             total = len(links)
             results = []
+            failed_count = 0
             for i, line in enumerate(links, start=1):
-                parsed = await self._url_parser.parse(line)
-                results.append(parsed)
+                try:
+                    parsed = await self._url_parser.parse(line)
+                    results.append(parsed)
+                except Exception as line_err:
+                    # v0.1.5：跳过无效行，不中断整体流程
+                    failed_count += 1
+                    logger.warning("第 %d 行解析失败，已跳过: %s", i, line_err)
                 self._worker_signals.parse_progress.emit(i, total)
+
+            if not results and failed_count > 0:
+                # 全部行均失败，报整体失败
+                self._worker_signals.parse_failed.emit(
+                    f"全部 {failed_count} 行链接均解析失败，请检查输入"
+                )
+                return
+
             self._worker_signals.parse_completed.emit(results)
-            logger.info("链接解析完成，共 %d 条", len(results))
+            logger.info("链接解析完成，成功 %d 条，失败 %d 条", len(results), failed_count)
         except asyncio.CancelledError:
             logger.info("链接解析被取消")
             raise
