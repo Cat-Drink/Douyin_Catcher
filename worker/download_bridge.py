@@ -20,6 +20,8 @@ Scheduler 回调设置机制：
 
 from __future__ import annotations
 
+import json
+
 from PySide6.QtCore import QObject
 
 from app.logger import get_logger
@@ -32,6 +34,32 @@ from worker.async_worker import AsyncWorker
 from worker.signals import ControlSignals, WorkerSignals
 
 logger = get_logger(__name__)
+
+
+def _filter_image_urls(image_urls: list[str], selected_indices_str: str) -> list[str]:
+    """根据 selected_image_indices 过滤图片 URL 列表（v0.1.7）。
+
+    Args:
+        image_urls: 全部图片直链
+        selected_indices_str: 勾选图片索引的 JSON 数组字符串；
+            空字符串表示全选；非法 JSON 也按全选处理
+
+    Returns:
+        过滤后的图片 URL 列表
+    """
+    if not selected_indices_str:
+        return list(image_urls)
+    try:
+        indices = json.loads(selected_indices_str)
+    except (json.JSONDecodeError, TypeError):
+        logger.warning(
+            "selected_image_indices 解析失败，按全选处理: %s",
+            selected_indices_str,
+        )
+        return list(image_urls)
+    if not isinstance(indices, list):
+        return list(image_urls)
+    return [image_urls[i] for i in indices if isinstance(i, int) and 0 <= i < len(image_urls)]
 
 
 class DownloadBridge(QObject):
@@ -254,6 +282,10 @@ class DownloadBridge(QObject):
         从 Cookie 仓库取 valid Cookie，调用 VideoParser.parse_video 获取
         no_watermark_url（视频）或 image_urls（图集），回填 DB。
 
+        v0.1.7：图集类型根据 ``selected_image_indices`` 过滤 image_urls，
+        仅下载勾选图片；同时回填 ``image_count``（图片总数，用于下载页
+        显示"M/N 张"进度）。
+
         Args:
             item: 待解析的 TaskItem（url 为空）
 
@@ -287,11 +319,15 @@ class DownloadBridge(QObject):
             self._worker_signals.item_failed.emit(item.id, str(e))
             return None
 
-        # 构造下载 URL：图集为换行分隔的图片 URL，视频为无水印直链
+        # 构造下载 URL：图集为换行分隔的图片 URL（按勾选过滤），视频为无水印直链
         if video_info.type == "image_set" and video_info.image_urls:
-            download_url = "\n".join(video_info.image_urls)
+            all_image_urls = list(video_info.image_urls)
+            selected_urls = _filter_image_urls(all_image_urls, item.selected_image_indices)
+            download_url = "\n".join(selected_urls)
+            image_count = len(all_image_urls)
         else:
             download_url = video_info.no_watermark_url or ""
+            image_count = None
 
         if not download_url:
             logger.warning("解析到的下载直链为空 aweme_id=%s", aweme_id)
@@ -299,7 +335,7 @@ class DownloadBridge(QObject):
             self._worker_signals.item_failed.emit(item.id, "下载直链为空")
             return None
 
-        # 回填 DB
+        # 回填 DB（v0.1.7：含 image_count，让下载页立即显示图集图片数）
         self._task_item_repo.update_url_and_type(
             item.id,
             download_url,
@@ -308,6 +344,7 @@ class DownloadBridge(QObject):
             author=video_info.author or None,
             duration=video_info.duration,
             cover_url=video_info.cover_url or None,
+            image_count=image_count,
         )
         logger.info(
             "已解析直链 task_item id=%s type=%s aweme_id=%s",

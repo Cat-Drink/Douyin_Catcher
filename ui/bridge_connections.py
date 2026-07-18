@@ -50,6 +50,7 @@ UI 槽函数，并将页面信号转发到 Bridge 控制信号，建立 UI 与�
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import QMessageBox, QWidget
@@ -69,6 +70,45 @@ if TYPE_CHECKING:
     from ui.main_window import MainWindow
 
 logger = get_logger(__name__)
+
+
+def _build_download_url(item_data: dict, item_type: str, selected_indices_str: str) -> str:
+    """根据预览数据构造 TaskItem.url 字段（v0.1.7）。
+
+    - 图集类型：按 ``selected_image_indices`` 过滤 image_urls 后用 ``\\n`` 拼接；
+      ``selected_image_indices`` 为空表示全选，拼接所有 image_urls
+    - 视频/长视频类型：直接使用 video_url
+    - 预览阶段未获取直链（image_urls 和 video_url 都为空）时返回空字符串，
+      由 ``DownloadBridge._resolve_download_url`` 在下载阶段重新解析
+
+    Args:
+        item_data: 预览结果 dict，含 image_urls / video_url
+        item_type: 类型（video / image_set / long_video）
+        selected_indices_str: 勾选图片索引的 JSON 数组字符串，空表示全选
+
+    Returns:
+        url 字符串：图集为 ``\\n`` 分隔的图片 URL；视频为无水印直链；空表示待解析
+    """
+    if item_type == "image_set":
+        image_urls = list(item_data.get("image_urls") or [])
+        if not image_urls:
+            return ""
+        if selected_indices_str:
+            try:
+                indices = json.loads(selected_indices_str)
+                if isinstance(indices, list):
+                    image_urls = [
+                        image_urls[i]
+                        for i in indices
+                        if isinstance(i, int) and 0 <= i < len(image_urls)
+                    ]
+            except (json.JSONDecodeError, TypeError):
+                logger.warning(
+                    "selected_image_indices 解析失败，按全选处理: %s",
+                    selected_indices_str,
+                )
+        return "\n".join(image_urls)
+    return item_data.get("video_url") or ""
 
 
 class BridgeConnections:
@@ -157,7 +197,8 @@ class BridgeConnections:
         if page is None:
             return
         control = self._crawler_bridge._control_signals  # noqa: SLF001
-        page.parse_requested.connect(control.start_parse.emit)
+        # v0.1.7：解析改为预览模式（含图片直链），让 UI 能展示图片缩略图并支持图片级勾选
+        page.parse_requested.connect(control.start_parse_for_preview.emit)
         page.home_fetch_requested.connect(control.start_home_fetch.emit)
         page.cancel_parse_requested.connect(control.cancel_parse.emit)
         page.cancel_home_fetch_requested.connect(control.cancel_home_fetch.emit)
@@ -255,6 +296,12 @@ class BridgeConnections:
         让下载页立即显示视频标题与封面，无需等待解析直链回填
         （用户反馈 #2/#3）。
 
+        v0.1.7：预览阶段已获取直链时（``image_urls`` / ``video_url``）直接
+        构造 url 字段，避免下载阶段重复解析；同时写入
+        ``selected_image_indices``（图集图片级勾选状态）。图集类型按
+        ``selected_image_indices`` 过滤 image_urls 后用 ``\\n`` 拼接为 url
+        （用户反馈 #7）。
+
         Args:
             items: 待下载的结果项 dict 列表，每项含 aweme_id 等字段。
         """
@@ -290,20 +337,25 @@ class BridgeConnections:
         logger.info("已创建 Task id=%s, %d 项", task_id, len(items))
 
         # 创建 TaskItems（v0.1.4：写入 title/author/type/duration/cover_url）
+        # v0.1.7：写入 selected_image_indices；预览阶段已获取直链时直接构造 url
         item_ids: list[int] = []
         for item_data in items:
             aweme_id = item_data.get("aweme_id") or ""
+            item_type = item_data.get("type") or ""
+            selected_indices_str = item_data.get("selected_image_indices", "")
+            url = _build_download_url(item_data, item_type, selected_indices_str)
             item = TaskItem(
                 id=None,
                 task_id=task_id,
                 aweme_id=aweme_id,
-                url="",
+                url=url,
                 title=item_data.get("title") or None,
                 author=item_data.get("author") or None,
-                type=item_data.get("type") or "",
+                type=item_type,
                 duration=item_data.get("duration"),
                 image_count=item_data.get("image_count"),
                 cover_url=item_data.get("cover_url") or None,
+                selected_image_indices=selected_indices_str,
                 status="pending",
             )
             item_id = item_repo.create(item)
