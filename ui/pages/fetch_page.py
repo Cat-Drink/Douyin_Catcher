@@ -222,6 +222,9 @@ class FetchPage(QWidget):
         self._is_parsing = False
         self._is_fetching = False
         self._loading_overlay = LoadingOverlay(self)
+        # v0.1.6：全选联动防递归标志位（用户反馈 #4）
+        # 单项勾选同步全选 / 全选同步单项时置 True，避免 stateChanged 信号递归触发
+        self._syncing_select_all: bool = False
 
         self._setup_ui()
         self._connect_bridge_signals()
@@ -295,7 +298,11 @@ class FetchPage(QWidget):
         # 列表头
         list_header = QHBoxLayout()
         self._select_all_chk = QCheckBox("全选")
-        self._select_all_chk.toggled.connect(self._on_select_all)
+        # v0.1.6：启用三态复选框（用户反馈 #4）
+        # Qt.Unchecked=0 项勾选 / Qt.PartiallyChecked=1~N-1 项 / Qt.Checked=N 项
+        self._select_all_chk.setTristate(True)
+        # stateChanged(int) 携带 Qt.CheckState 三态值，toggled(bool) 仅两态不够用
+        self._select_all_chk.stateChanged.connect(self._on_select_all_state_changed)
         list_header.addWidget(self._select_all_chk)
         self._selected_count_label = QLabel("已选 0 / 共 0 项")
         self._selected_count_label.setStyleSheet("color: #6B7280; font-size: 13px;")
@@ -378,13 +385,29 @@ class FetchPage(QWidget):
                 self._show_input_error(f"文件读取失败：{e}")
 
     def _on_parse_clicked(self) -> None:
-        """开始解析按钮点击。"""
+        """开始解析按钮点击。
+
+        v0.1.6：解析中点击按钮取消解析时，保留输入框文本（供用户编辑后重试），
+        清空已解析的部分结果、重置全选状态、隐藏过滤栏（用户反馈 #5）。
+        """
         if self._is_parsing:
-            # 取消解析
+            # 取消解析：保留输入文本，清空部分结果
             self._is_parsing = False
             self._parse_btn.setText("开始解析")
             self._loading_overlay.hide()
             self.cancel_parse_requested.emit()
+            # v0.1.6：清理部分结果 + 重置全选 + 隐藏过滤栏
+            self._clear_results()
+            self._home_hint_label.setVisible(False)
+            self._filter_bar.setVisible(False)
+            self._syncing_select_all = True
+            try:
+                self._select_all_chk.setCheckState(Qt.CheckState.Unchecked)
+            finally:
+                self._syncing_select_all = False
+            self._update_result_visibility()
+            self._update_selected_count()
+            Toast.show_info(self, "已取消解析")
             return
 
         text = self._input_edit.toPlainText().strip()
@@ -507,7 +530,8 @@ class FetchPage(QWidget):
     def _add_result_widget(self, result: dict) -> ResultItemWidget:
         """添加结果行到列表。"""
         widget = ResultItemWidget(result)
-        widget.selection_changed.connect(self._update_selected_count)
+        # v0.1.6：单项勾选变化时同步全选复选框三态（用户反馈 #4）
+        widget.selection_changed.connect(self._on_item_selection_changed)
         count = self._list_layout.count()
         self._list_layout.insertWidget(count - 1, widget)
         self._result_widgets.append(widget)
@@ -527,10 +551,57 @@ class FetchPage(QWidget):
         if not has_results:
             self._empty_widget.setVisible(True)
 
-    def _on_select_all(self, checked: bool) -> None:
-        """全选/取消全选。"""
-        for widget in self._result_widgets:
-            widget.set_selected(checked)
+    def _on_select_all_state_changed(self, state: int) -> None:
+        """全选复选框状态变化时，同步所有结果项勾选状态。
+
+        v0.1.6：三态复选框联动（用户反馈 #4）。
+        - ``Qt.Unchecked`` / ``Qt.Checked``：同步所有项为取消/勾选
+        - ``Qt.PartiallyChecked``：不响应（避免点击部分选状态时循环触发）
+        - ``_syncing_select_all`` 标志位防止单项→全选→单项的递归触发
+
+        Args:
+            state: ``Qt.CheckState`` 枚举值（0=Unchecked, 1=PartiallyChecked, 2=Checked）。
+        """
+        if self._syncing_select_all:
+            return
+        if state == Qt.CheckState.PartiallyChecked.value:
+            # 部分选状态不响应点击（避免循环）
+            return
+        selected = state == Qt.CheckState.Checked.value
+        self._syncing_select_all = True
+        try:
+            for widget in self._result_widgets:
+                widget.set_selected(selected)
+        finally:
+            self._syncing_select_all = False
+        self._update_selected_count()
+
+    def _on_item_selection_changed(self, _is_selected: bool) -> None:
+        """单项结果勾选状态变化时，同步全选复选框三态。
+
+        v0.1.6：手动勾选全部 N 项时全选自动变为已勾选；取消任一项时变为部分选；
+        取消全部时变为未选（用户反馈 #4）。使用 ``_syncing_select_all`` 标志位
+        防止 ``setCheckState`` 触发 ``stateChanged`` 信号导致递归。
+
+        Args:
+            _is_selected: 单项勾选状态（未使用，仅作信号签名匹配）。
+        """
+        if self._syncing_select_all:
+            return
+        selected_count = sum(1 for w in self._result_widgets if w.is_selected())
+        total_count = len(self._result_widgets)
+        if total_count == 0 or selected_count == 0:
+            new_state = Qt.CheckState.Unchecked
+        elif selected_count == total_count:
+            new_state = Qt.CheckState.Checked
+        else:
+            new_state = Qt.CheckState.PartiallyChecked
+        self._syncing_select_all = True
+        try:
+            self._select_all_chk.setCheckState(new_state)
+        finally:
+            self._syncing_select_all = False
+        self._update_selected_count()
 
     def _update_selected_count(self) -> None:
         """更新已选计数与下载按钮。"""
@@ -551,11 +622,51 @@ class FetchPage(QWidget):
         每项含 aweme_id/title/author/type/duration/image_count/cover_url，
         供 Bridge 在创建 TaskItem 时直接写入 title/cover_url，
         让下载页能立即显示视频标题与封面，无需等待解析直链回填。
+
+        v0.1.6：点击下载时仅 emit 信号 + Toast 提示，**不立即清理**抓取页内容。
+        清理在 ``DownloadBridge.download_started`` 信号到达后由
+        ``clear_after_download_started`` 执行，避免提前清理导致任务丢失
+        （用户反馈 #6）。
         """
         items = [w.result_data for w in self._result_widgets if w.is_selected()]
         if items:
             self.download_requested.emit(items)
             Toast.show_success(self, f"已加入下载队列（{len(items)} 项）")
+
+    def clear_after_download_started(self) -> None:
+        """Bridge 确认入队成功后清理抓取页内容。
+
+        v0.1.6：在 ``DownloadBridge.download_started`` 信号到达后由
+        ``BridgeConnections._on_download_started`` 调用（用户反馈 #6）。
+
+        清理内容：
+            1. 输入框文本
+            2. 结果列表（删除所有 ResultItemWidget）
+            3. 主页提示行 + 过滤栏（隐藏）
+            4. 全选复选框状态（重置为未选）
+            5. 已选计数与下载按钮（重置为 0）
+
+        若入队失败（``download_started`` 未到达），抓取页内容保留供用户重试。
+        """
+        # 1. 清空输入框
+        self._input_edit.clear()
+        # 2. 清空结果列表
+        self._clear_results()
+        # 3. 隐藏主页提示行 + 过滤栏
+        self._home_hint_label.setVisible(False)
+        self._filter_bar.setVisible(False)
+        # 4. 重置全选状态（_syncing_select_all 防止递归触发 _on_select_all_state_changed）
+        self._syncing_select_all = True
+        try:
+            self._select_all_chk.setCheckState(Qt.CheckState.Unchecked)
+        finally:
+            self._syncing_select_all = False
+        # 5. 切换空状态显示 + 重置计数
+        self._update_result_visibility()
+        self._update_selected_count()
+        # 6. 隐藏输入错误提示（若有）
+        self._hide_input_error()
+        logger.info("抓取页已在入队成功后清理")
 
     def _show_input_error(self, message: str) -> None:
         """显示输入错误提示。"""
