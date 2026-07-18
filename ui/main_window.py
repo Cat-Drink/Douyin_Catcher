@@ -54,7 +54,8 @@ logger = get_logger(__name__)
 
 # 窗口属性常量（规范 5.1 节）
 APP_NAME = "抖音抓取器"
-APP_VERSION = "v0.1.0"
+_APP_VERSION = "0.1.1"  # 版本号单一来源（规范 8.3 节），供 UI 模块引用以避免版本号漂移
+APP_VERSION = f"v{_APP_VERSION}"  # 向后兼容别名，供 main.py 与测试引用
 MIN_WINDOW_SIZE = (800, 600)
 DEFAULT_WINDOW_SIZE = (1280, 800)
 
@@ -136,8 +137,12 @@ class MainWindow(QMainWindow):
         self._nav_bar.set_current_page(0)
 
     def _setup_window(self) -> None:
-        """设置窗口属性：标题、最小尺寸、推荐尺寸。"""
-        self.setWindowTitle(APP_NAME)
+        """设置窗口属性：标题、最小尺寸、推荐尺寸。
+
+        v0.1.1：移除非客户区标题栏文字，保留系统标题栏以保留拖动与
+        最小化/最大化/关闭按钮（低风险方案，不使用 FramelessWindowHint）。
+        """
+        self.setWindowTitle("")  # 移除标题栏文字，保留系统按钮与拖动
         self.setMinimumSize(*MIN_WINDOW_SIZE)
         self.resize(*DEFAULT_WINDOW_SIZE)
 

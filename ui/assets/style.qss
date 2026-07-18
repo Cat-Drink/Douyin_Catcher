@@ -80,6 +80,11 @@ QPushButton#navItem:checked {
     font-weight: 500;
 }
 
+/* v0.1.1：移除侧边栏导航按钮焦点描边（修复选中态蓝色边框问题，规范 4.2 节） */
+QPushButton#navItem:focus {
+    outline: none;
+}
+
 QLabel#navVersion {
     color: #9CA3AF;
     font-size: 12px;

@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ui.main_window import APP_NAME, APP_VERSION, DEFAULT_WINDOW_SIZE, MIN_WINDOW_SIZE, MainWindow
+from ui.main_window import APP_VERSION, DEFAULT_WINDOW_SIZE, MIN_WINDOW_SIZE, MainWindow
 from ui.pages.cookie_page import CookiePage
 from ui.pages.download_page import DownloadPage
 from ui.pages.fetch_page import FetchPage
@@ -83,8 +83,8 @@ class TestMainWindow:
         window.deleteLater()
 
     def test_main_window_title(self, main_window: MainWindow) -> None:
-        """窗口标题为"抖音抓取器"。"""
-        assert main_window.windowTitle() == APP_NAME
+        """v0.1.1：非客户区标题栏文字已移除，windowTitle() 为空字符串。"""
+        assert main_window.windowTitle() == ""
 
     def test_main_window_minimum_size(self, main_window: MainWindow) -> None:
         """窗口最小尺寸为 800x600。"""
