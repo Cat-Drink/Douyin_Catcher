@@ -11,12 +11,17 @@ import asyncio
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from app.models import Task, TaskItem
 from app.repositories import CookieRepository, TaskItemRepository, TaskRepository
 from crawlers.http_client import HttpClient
 from crawlers.signer import Signer
 from crawlers.video_parser import VideoParser
 from downloader.scheduler import Scheduler
+
+# 标记所有端到端测试为 integration（CI 默认跳过）
+pytestmark = pytest.mark.integration
 
 
 async def test_resume_after_restart(
