@@ -321,6 +321,36 @@ class TaskItemRepository:
                 (retry_count, now_iso(), item_id),
             )
 
+    def update_url_and_type(
+        self,
+        item_id: int,
+        url: str,
+        item_type: str,
+        title: str | None = None,
+        author: str | None = None,
+        duration: str | None = None,
+        cover_url: str | None = None,
+    ) -> None:
+        """更新任务项的下载直链与类型（解析后回填）。
+
+        可选字段（title/author/duration/cover_url）非 None 时一并更新。
+        """
+        now = now_iso()
+        with self._conn:
+            self._conn.execute(
+                """
+                UPDATE task_items
+                SET url = ?, type = ?,
+                    title = COALESCE(?, title),
+                    author = COALESCE(?, author),
+                    duration = COALESCE(?, duration),
+                    cover_url = COALESCE(?, cover_url),
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (url, item_type, title, author, duration, cover_url, now, item_id),
+            )
+
     def delete(self, item_id: int) -> None:
         """删除任务项。"""
         with self._conn:

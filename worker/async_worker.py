@@ -162,8 +162,19 @@ class AsyncWorker(QThread):
         if self._loop is None:
             raise RuntimeError("AsyncWorker loop 未就绪，请先 start()")
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        future.add_done_callback(self._log_future_exception)
         logger.debug("已提交协程到工作线程")
         return future
+
+    @staticmethod
+    def _log_future_exception(future: concurrent.futures.Future) -> None:
+        """Future 完成回调：记录未捕获的异常。
+
+        防止 ``submit`` 提交的协程异常被静默吞掉。
+        """
+        exc = future.exception()
+        if exc is not None:
+            logger.error("工作线程协程未捕获异常: %s", exc, exc_info=exc)
 
     def run_in_thread(self, coro: Coroutine) -> Awaitable:
         """工作线程内部提交协程。
