@@ -30,9 +30,12 @@ UI 槽函数，并将页面信号转发到 Bridge 控制信号，建立 UI 与�
     页面信号 → 本地处理:
         DownloadPage.clear_completed_clicked() → 删除 DB 中已完成任务项
         DownloadPage.navigate_to_fetch()       → 切换到链接抓取页
-        FetchPage.download_requested(list)     → 创建 Task/TaskItem + 启动下载
+        FetchPage.download_requested(list[dict]) → 创建 Task/TaskItem + 启动下载
             v0.1.3：下载目录从设置页 ConfigRepository.get("download_dir") 读取，
             不再由抓取页传入。
+            v0.1.4：信号载荷改为 list[dict]，每项含 aweme_id/title/author/type/
+            duration/image_count/cover_url，创建 TaskItem 时直接写入，
+            让下载页立即显示标题与封面（用户反馈 #2/#3）。
         CookiePage.add_cookie_requested(str,str)  → CookieRepository.add
         CookiePage.remove_cookie_requested(int)   → CookieRepository.remove
         SettingsPage.settings_changed(dict)       → 日志记录
@@ -217,24 +220,29 @@ class BridgeConnections:
 
     # === FetchPage 信号槽 ===
 
-    def _on_download_requested(self, aweme_ids: list) -> None:
+    def _on_download_requested(self, items: list) -> None:
         """开始下载：从设置页读取下载目录，创建 Task/TaskItem，提交到下载队列。
 
         v0.1.3：下载目录不再由抓取页传入，统一从 ``ConfigRepository`` 读取
         （用户反馈 #9）。若 ``download_dir`` 为空，弹窗提示
         "请先在设置页配置下载目录"并返回，不创建任务。
 
+        v0.1.4：``items`` 改为 ``list[dict]``，每项含 aweme_id/title/author/
+        type/duration/image_count/cover_url。创建 TaskItem 时直接写入这些字段，
+        让下载页立即显示视频标题与封面，无需等待解析直链回填
+        （用户反馈 #2/#3）。
+
         Args:
-            aweme_ids: 待下载的 aweme_id 列表。
+            items: 待下载的结果项 dict 列表，每项含 aweme_id 等字段。
         """
-        if not aweme_ids:
+        if not items:
             return
 
         conn = self._main_window._conn  # noqa: SLF001
         config_repo = ConfigRepository(conn)
         download_dir = config_repo.get("download_dir")
         if not download_dir:
-            logger.warning("下载目录未配置，阻止入队 %d 项", len(aweme_ids))
+            logger.warning("下载目录未配置，阻止入队 %d 项", len(items))
             QMessageBox.warning(
                 self._main_window,
                 "未配置下载目录",
@@ -252,20 +260,27 @@ class BridgeConnections:
             source_type="batch",
             source_url=None,
             status="pending",
-            total_items=len(aweme_ids),
+            total_items=len(items),
             download_dir=download_dir,
         )
         task_id = task_repo.create(task)
-        logger.info("已创建 Task id=%s, %d 项", task_id, len(aweme_ids))
+        logger.info("已创建 Task id=%s, %d 项", task_id, len(items))
 
-        # 创建 TaskItems
+        # 创建 TaskItems（v0.1.4：写入 title/author/type/duration/cover_url）
         item_ids: list[int] = []
-        for aweme_id in aweme_ids:
+        for item_data in items:
+            aweme_id = item_data.get("aweme_id") or ""
             item = TaskItem(
                 id=None,
                 task_id=task_id,
                 aweme_id=aweme_id,
                 url="",
+                title=item_data.get("title") or None,
+                author=item_data.get("author") or None,
+                type=item_data.get("type") or "",
+                duration=item_data.get("duration"),
+                image_count=item_data.get("image_count"),
+                cover_url=item_data.get("cover_url") or None,
                 status="pending",
             )
             item_id = item_repo.create(item)

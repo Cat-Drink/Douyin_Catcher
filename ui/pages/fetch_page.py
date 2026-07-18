@@ -159,6 +159,15 @@ class ResultItemWidget(QWidget):
         """返回结果项的 aweme_id。"""
         return self._result.get("aweme_id", "")
 
+    @property
+    def result_data(self) -> dict:
+        """返回结果项的完整 dict（v0.1.4）。
+
+        供 FetchPage 在下载入队时构造 ``download_requested`` 信号载荷，
+        包含 aweme_id/title/author/type/duration/image_count/cover_url。
+        """
+        return self._result
+
     def is_selected(self) -> bool:
         """返回勾选状态。"""
         return self._chk.isChecked()
@@ -178,8 +187,11 @@ class FetchPage(QWidget):
     信号:
         parse_requested: 点击"开始解析"，传输入框文本。
         home_fetch_requested: 点击过滤栏"开始抓取"，传 sec_user_id 与 filters。
-        download_requested: 点击"开始下载"，传选中的 aweme_id 列表。
+        download_requested: 点击"开始下载"，传选中的结果项 dict 列表。
             v0.1.3：下载目录不再由抓取页传入，由 Bridge 从设置页配置读取。
+            v0.1.4：信号载荷从 ``list[str]``（aweme_id）改为 ``list[dict]``，
+            每项含 aweme_id/title/author/type/duration/image_count/cover_url，
+            供 Bridge 在创建 TaskItem 时直接写入 title/cover_url（用户反馈 #2/#3）。
         cancel_parse_requested: 取消解析。
         cancel_home_fetch_requested: 取消主页抓取。
     """
@@ -531,14 +543,19 @@ class FetchPage(QWidget):
     def _on_download_clicked(self) -> None:
         """开始下载按钮点击。
 
-        v0.1.3：下载目录不再由抓取页传入，``download_requested`` 仅传 aweme_id 列表。
+        v0.1.3：下载目录不再由抓取页传入，``download_requested`` 仅传结果项 dict。
         下载目录为空校验由 ``BridgeConnections._on_download_requested`` 负责，
         从设置页配置读取；为空时弹窗提示"请先在设置页配置下载目录"。
+
+        v0.1.4：信号载荷从 ``list[str]``（aweme_id）改为 ``list[dict]``，
+        每项含 aweme_id/title/author/type/duration/image_count/cover_url，
+        供 Bridge 在创建 TaskItem 时直接写入 title/cover_url，
+        让下载页能立即显示视频标题与封面，无需等待解析直链回填。
         """
-        aweme_ids = [w.aweme_id for w in self._result_widgets if w.is_selected()]
-        if aweme_ids:
-            self.download_requested.emit(aweme_ids)
-            Toast.show_success(self, f"已加入下载队列（{len(aweme_ids)} 项）")
+        items = [w.result_data for w in self._result_widgets if w.is_selected()]
+        if items:
+            self.download_requested.emit(items)
+            Toast.show_success(self, f"已加入下载队列（{len(items)} 项）")
 
     def _show_input_error(self, message: str) -> None:
         """显示输入错误提示。"""
