@@ -220,6 +220,11 @@ class DownloadBridge(QObject):
         对于 url 为空的 TaskItem，调用 VideoParser.parse_video 解析无水印直链
         与类型，回填到 DB 后再加入队列。
 
+        v0.1.6：成功加入队列后 emit ``download_started(task_id)`` 信号，
+        供 FetchPage 清理输入框/结果列表/过滤栏（用户反馈 #6）。task_id 从
+        首个成功入队的 TaskItem 反查；若全部项解析失败不 emit，保留抓取页内容
+        供用户重试。
+
         Args:
             task_item_ids: 任务项 ID 列表
         """
@@ -239,6 +244,9 @@ class DownloadBridge(QObject):
         if items:
             self._scheduler.add_task_items(items)
             logger.info("已加入下载队列 %d 项", len(items))
+            # v0.1.6：通知 UI 入队成功，触发 FetchPage 清理
+            task_id = items[0].task_id
+            self._worker_signals.download_started.emit(task_id)
 
     async def _resolve_download_url(self, item: TaskItem) -> TaskItem | None:
         """解析 TaskItem 的下载直链与类型。
@@ -262,9 +270,7 @@ class DownloadBridge(QObject):
         cookie = self._cookie_repo.get_valid()
         if cookie is None:
             logger.warning("无可用 Cookie，无法解析直链 aweme_id=%s", aweme_id)
-            self._task_item_repo.update_status(
-                item.id, "failed", fail_reason="无可用 Cookie"
-            )
+            self._task_item_repo.update_status(item.id, "failed", fail_reason="无可用 Cookie")
             self._worker_signals.item_failed.emit(item.id, "无可用 Cookie")
             return None
 
@@ -272,16 +278,12 @@ class DownloadBridge(QObject):
             video_info = await self._video_parser.parse_video(aweme_id, cookie.content)
         except CookieInvalidError:
             logger.warning("解析直链时 Cookie 失效 aweme_id=%s", aweme_id)
-            self._task_item_repo.update_status(
-                item.id, "failed", fail_reason="Cookie 失效"
-            )
+            self._task_item_repo.update_status(item.id, "failed", fail_reason="Cookie 失效")
             self._worker_signals.item_failed.emit(item.id, "Cookie 失效")
             return None
         except Exception as e:
             logger.exception("解析直链失败 aweme_id=%s", aweme_id)
-            self._task_item_repo.update_status(
-                item.id, "failed", fail_reason=str(e)
-            )
+            self._task_item_repo.update_status(item.id, "failed", fail_reason=str(e))
             self._worker_signals.item_failed.emit(item.id, str(e))
             return None
 
@@ -293,9 +295,7 @@ class DownloadBridge(QObject):
 
         if not download_url:
             logger.warning("解析到的下载直链为空 aweme_id=%s", aweme_id)
-            self._task_item_repo.update_status(
-                item.id, "failed", fail_reason="下载直链为空"
-            )
+            self._task_item_repo.update_status(item.id, "failed", fail_reason="下载直链为空")
             self._worker_signals.item_failed.emit(item.id, "下载直链为空")
             return None
 
