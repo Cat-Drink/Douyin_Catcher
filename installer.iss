@@ -1,8 +1,8 @@
-; ==============================================================================
+﻿; ==============================================================================
 ; 抖音抓取器 Inno Setup 安装脚本
 ;
 ; 严格遵循规范文档 8.2 节与附录 E。
-; 生成 Windows 安装包：dist/DouyinCatcher_Setup_v0.1.1.exe
+; 生成 Windows 安装包：dist/DouyinCatcher_Setup_v0.2.0.exe
 ;
 ; 编译命令::
 ;
@@ -20,7 +20,7 @@
 ; ==============================================================================
 
 #define MyAppName "抖音抓取器"
-#define MyAppVersion "0.1.9"
+#define MyAppVersion "0.2.0"
 #define MyAppPublisher "DouyinCatcher Contributors"
 #define MyAppExeName "DouyinCatcher.exe"
 #define MyAppURL "https://github.com/Evil0ctal/Douyin_TikTok_Download_API"
@@ -46,7 +46,7 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 
 ; 输出配置
 OutputDir=dist
-OutputBaseFilename=DouyinCatcher_Setup_v0.1.9
+OutputBaseFilename=DouyinCatcher_Setup_v0.2.0
 
 ; 安装向导图标
 SetupIconFile=assets\icon.ico
