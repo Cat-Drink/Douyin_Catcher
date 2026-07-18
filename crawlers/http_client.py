@@ -386,7 +386,11 @@ class HttpClient:
                 self.report_cookie_success(cookie_id)
             return response
 
-        # 优先级 6 & 7：其他 4xx/5xx
+        # 优先级 6：3xx 重定向（如短链 302），原样返回供调用方读取 Location 头
+        if 300 <= status <= 399:
+            return response
+
+        # 优先级 7 & 8：其他 4xx/5xx
         logger.warning("HTTP 错误响应 %d: url=%s", status, response.url)
         raise NetworkError(f"HTTP {status} 错误响应")
 
