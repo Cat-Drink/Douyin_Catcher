@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ui.main_window import APP_VERSION, DEFAULT_WINDOW_SIZE, MIN_WINDOW_SIZE, MainWindow
+from ui.main_window import DEFAULT_WINDOW_SIZE, MIN_WINDOW_SIZE, MainWindow
 from ui.pages.cookie_page import CookiePage
 from ui.pages.download_page import DownloadPage
 from ui.pages.fetch_page import FetchPage
@@ -153,33 +153,51 @@ class TestPageSwitching:
 # ==================== 状态栏测试 ====================
 
 
-class TestStatusBar:
-    """状态栏显示测试。"""
+class TestNavBarStatus:
+    """v0.1.2：NavBar 底部下载任务状态栏测试。"""
 
-    def test_status_bar_counts_display(self, main_window: MainWindow) -> None:
-        """状态栏左侧初始显示"总数 0 · 下载中 0 · 已完成 0 · 失败 0"。"""
-        assert main_window._status_counts_label is not None
-        assert "总数 0" in main_window._status_counts_label.text()
-        assert "下载中 0" in main_window._status_counts_label.text()
-        assert "已完成 0" in main_window._status_counts_label.text()
-        assert "失败 0" in main_window._status_counts_label.text()
+    def test_nav_bar_has_status_label(self, qapp) -> None:
+        """NavBar 含 _status_label 成员，初始显示"总数 0 · 下载中 0 · 已完成 0 · 失败 0"。"""
+        nav_bar = NavBar()
+        assert nav_bar._status_label is not None
+        text = nav_bar._status_label.text()
+        assert "总数 0" in text
+        assert "下载中 0" in text
+        assert "已完成 0" in text
+        assert "失败 0" in text
 
-    def test_status_bar_version_display(self, main_window: MainWindow) -> None:
-        """状态栏右侧显示版本号。"""
-        status_bar = main_window.statusBar()
-        version_labels = status_bar.findChildren(type(main_window._status_counts_label))
-        version_texts = [lbl.text() for lbl in version_labels]
-        assert APP_VERSION in version_texts
-
-    def test_update_status_counts(self, main_window: MainWindow) -> None:
-        """update_status_counts 更新状态栏计数文本。"""
-        main_window.update_status_counts(10, 3, 5, 2)
-        assert main_window._status_counts_label is not None
-        text = main_window._status_counts_label.text()
+    def test_nav_bar_update_status(self, qapp) -> None:
+        """update_status 更新 NavBar 底部状态栏文字。"""
+        nav_bar = NavBar()
+        nav_bar.update_status(10, 3, 5, 2)
+        text = nav_bar._status_label.text()
         assert "总数 10" in text
         assert "下载中 3" in text
         assert "已完成 5" in text
         assert "失败 2" in text
+
+    def test_main_window_no_qstatusbar(self, main_window: MainWindow) -> None:
+        """v0.1.2：QMainWindow QStatusBar 已移除，statusBar() 返回空 QStatusBar。
+
+        QMainWindow.statusBar() 首次调用会创建空 QStatusBar（Qt 行为），
+        但本应用不再调用 setStatusBar，也无 _status_counts_label 成员。
+        """
+        assert not hasattr(main_window, "_status_counts_label")
+        assert not hasattr(main_window, "update_status_counts")
+
+    def test_main_window_refresh_nav_status(self, main_window: MainWindow) -> None:
+        """v0.1.2：_refresh_nav_status 从 DB 统计并刷新 NavBar 状态栏。
+
+        MainWindow 构造时已调用 _refresh_nav_status()，mock_conn 下各
+        get_by_status 返回空列表，NavBar 状态栏显示"总数 0"。
+        """
+        assert hasattr(main_window, "_refresh_nav_status")
+        assert hasattr(main_window, "_schedule_nav_status_refresh")
+        assert main_window._nav_status_timer is not None
+        assert main_window._nav_bar is not None
+        assert main_window._nav_bar._status_label is not None
+        # 构造时已调用 _refresh_nav_status，mock 返回空列表
+        assert "总数 0" in main_window._nav_bar._status_label.text()
 
 
 # ==================== QSS 加载测试 ====================

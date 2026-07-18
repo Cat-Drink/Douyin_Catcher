@@ -91,6 +91,14 @@ QLabel#navVersion {
     padding: 16px 20px;
 }
 
+/* v0.1.2：侧边栏底部下载任务状态栏（计划 2.7 节，用户反馈 #14） */
+QLabel#navStatusBar {
+    font-size: 11px;
+    color: #6B7280;
+    padding: 8px 16px;
+    border-top: 1px solid #E5E7EB;
+}
+
 /* ==================== 3. 页面标题与状态栏（规范 5.1 节） ==================== */
 
 QLabel#pageTitle {
@@ -100,26 +108,7 @@ QLabel#pageTitle {
     padding: 16px 24px;
 }
 
-QStatusBar {
-    background-color: #F9FAFB;
-    border-top: 1px solid #E5E7EB;
-    color: #6B7280;
-    font-size: 12px;
-    min-height: 32px;
-    max-height: 32px;
-    padding: 4px 16px;
-}
-
-QStatusBar QLabel {
-    color: #6B7280;
-    font-size: 12px;
-    background-color: transparent;
-}
-
-QLabel#statusBarVersion {
-    color: #9CA3AF;
-    font-size: 12px;
-}
+/* v0.1.2：QMainWindow QStatusBar 已移除，状态栏统一移至 NavBar 底部 */
 
 /* ==================== 4. 按钮（规范 4.2 节） ==================== */
 

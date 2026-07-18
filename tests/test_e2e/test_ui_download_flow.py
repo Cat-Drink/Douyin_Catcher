@@ -145,10 +145,8 @@ async def test_ui_download_page_flow_e2e(
         assert item.local_path is not None
 
         # 11. 验证 DownloadPage 显示了下载完成状态
-        # item_completed 信号应已更新行 widget 状态与状态栏
+        # v0.1.2：DownloadPage 底部状态栏已移至 NavBar，这里仅验证行 widget 状态
         assert widget._task_item.status == "completed"
-        status_text = page._status_label.text()
-        assert "已完成 1" in status_text, f"状态栏未显示完成: {status_text}"
 
         # 12. 验证文件落盘
         downloaded_file = Path(item.local_path)

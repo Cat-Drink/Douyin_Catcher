@@ -1,9 +1,10 @@
 """Cookie 配置页模块。
 
 实现 Cookie 配置页，包含操作栏、Cookie 列表、添加 Cookie 弹窗、
-教程折叠面板、状态栏。
+教程折叠面板。
 
 严格遵循设计文档 3.1 节页面 3、7.5 节教程内容与 UIUX 规范 5.4 节。
+v0.1.2：移除页面底部状态栏（用户反馈 #14：操作页面底部不再保留底部边栏）。
 
 布局结构::
 
@@ -11,7 +12,6 @@
     [48px 操作栏: + 添加 Cookie / 全部测试 / 教程 ▼]
     [Cookie 列表 QScrollArea]
     [折叠面板: Cookie 获取教程（7步）]
-    [状态栏: 共 N · 有效 N · 失效 N · 未测试 N]
 """
 
 from __future__ import annotations
@@ -239,14 +239,6 @@ class CookiePage(QWidget):
         self._tutorial_container.setVisible(False)
         layout.addWidget(self._tutorial_container)
 
-        # 状态栏
-        self._status_label = QLabel("共 0 · 有效 0 · 失效 0 · 未测试 0")
-        self._status_label.setObjectName("statusBarCounts")
-        self._status_label.setFixedHeight(32)
-        self._status_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        self._status_label.setContentsMargins(24, 0, 24, 0)
-        layout.addWidget(self._status_label)
-
     def _create_empty_widget(self) -> QWidget:
         """创建空状态 widget。"""
         widget = QWidget()
@@ -334,13 +326,15 @@ class CookiePage(QWidget):
         signals.cookie_test_result.connect(self._on_cookie_test_result)
 
     def refresh(self) -> None:
-        """从 DB 加载全部 Cookie，重建列表，更新状态栏。"""
+        """从 DB 加载全部 Cookie，重建列表。
+
+        v0.1.2：状态栏已移除，不再显示 Cookie 统计。
+        """
         self._clear_list()
         cookies = self._cookie_repo.get_all()
         for cookie in cookies:
             self._add_cookie_widget(cookie)
         self._update_empty_state()
-        self._update_status_bar()
 
     def _clear_list(self) -> None:
         """清空 Cookie 列表。"""
@@ -364,22 +358,6 @@ class CookiePage(QWidget):
         has_items = len(self._cookie_widgets) > 0
         self._empty_widget.setVisible(not has_items)
         self._scroll_area.setVisible(has_items)
-
-    def _update_status_bar(self) -> None:
-        """更新状态栏计数。"""
-        total = len(self._cookie_widgets)
-        valid = sum(
-            1 for w in self._cookie_widgets.values() if w._cookie.status == "valid"
-        )  # noqa: SLF001
-        invalid = sum(
-            1 for w in self._cookie_widgets.values() if w._cookie.status == "invalid"
-        )  # noqa: SLF001
-        untested = sum(
-            1 for w in self._cookie_widgets.values() if w._cookie.status == "untested"
-        )  # noqa: SLF001
-        self._status_label.setText(
-            f"共 {total} · 有效 {valid} · 失效 {invalid} · 未测试 {untested}"
-        )
 
     def _on_add_cookie(self) -> None:
         """添加 Cookie 按钮点击。"""
@@ -406,7 +384,6 @@ class CookiePage(QWidget):
         widget = self._cookie_widgets.get(cookie_id)
         if widget is not None:
             widget.set_test_result(is_valid, message)
-            self._update_status_bar()
         # Toast 反馈测试结果
         if is_valid:
             Toast.show_success(self, "Cookie 测试通过")

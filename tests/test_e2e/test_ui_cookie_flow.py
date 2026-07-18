@@ -104,15 +104,15 @@ async def test_ui_cookie_page_test_e2e(
         # 通过 CookiePage 信号触发 Cookie 测试
         page.test_cookie_requested.emit(cookie_id)
 
-        # 等待测试结果回显（状态栏显示"有效 1"）
+        # v0.1.2：CookiePage 底部状态栏已移除，改为通过 widget._cookie.status 验证
         await _wait_for(
-            lambda: "有效 1" in page._status_label.text(),
+            lambda: page._cookie_widgets[cookie_id]._cookie.status == "valid",
             qapp,
         )
 
-        # 验证 CookiePage 显示了 Cookie 有效状态
-        status_text = page._status_label.text()
-        assert "有效 1" in status_text, f"状态栏未显示有效状态: {status_text}"
+        # 验证 CookieItemWidget 显示了有效状态
+        widget = page._cookie_widgets[cookie_id]
+        assert widget._cookie.status == "valid"
     finally:
         # http_client 绑定到 worker 线程的 event loop，
         # 必须在 worker.stop() 之前通过 submit() 在 worker 线程内关闭
