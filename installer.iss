@@ -46,7 +46,7 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 
 ; 输出配置
 OutputDir=dist
-OutputBaseFilename=DouyinCatcher_Setup_v0.1.1
+OutputBaseFilename=DouyinCatcher_Setup_v0.1.9
 
 ; 安装向导图标
 SetupIconFile=assets\icon.ico
