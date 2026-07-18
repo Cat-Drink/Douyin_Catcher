@@ -26,11 +26,13 @@ import contextlib
 from PySide6.QtCore import QObject
 
 from app.logger import get_logger
+from app.preview_models import PreviewItem
 from app.repositories import CookieRepository
 from crawlers.cookie_tester import CookieTester
 from crawlers.exceptions import CookieInvalidError
 from crawlers.url_parser import URLParser
 from crawlers.user_home_crawler import HomeFilters, PostItem, UserHomeCrawler
+from crawlers.video_parser import VideoParser
 from worker.async_worker import AsyncWorker
 from worker.signals import ControlSignals, WorkerSignals
 
@@ -59,6 +61,7 @@ class CrawlerBridge(QObject):
         cookie_repository: CookieRepository,
         worker_signals: WorkerSignals,
         control_signals: ControlSignals,
+        video_parser: VideoParser | None = None,
         parent=None,
     ) -> None:
         """初始化爬虫桥接器。
@@ -71,6 +74,8 @@ class CrawlerBridge(QObject):
             cookie_repository: Cookie 仓库
             worker_signals: 工作线程→UI 信号
             control_signals: UI→工作线程控制信号
+            video_parser: 视频解析器，v0.1.7 起预览解析需要。None 时
+                ``parse_for_preview`` 会 emit preview_failed（向后兼容）
             parent: Qt 父对象
         """
         super().__init__(parent)
@@ -81,6 +86,7 @@ class CrawlerBridge(QObject):
         self._cookie_repo = cookie_repository
         self._worker_signals = worker_signals
         self._control_signals = control_signals
+        self._video_parser = video_parser
 
         # 用于取消的 Task 引用
         self._parse_task: asyncio.Task | None = None
@@ -103,6 +109,17 @@ class CrawlerBridge(QObject):
     def on_cancel_parse(self) -> None:
         """接收 ``control_signals.cancel_parse``：取消正在进行的解析。"""
         self._async_worker.submit(self._handle_cancel_parse())
+
+    def on_start_parse_for_preview(self, text: str) -> None:
+        """接收 ``control_signals.start_parse_for_preview``：启动预览解析（v0.1.7）。
+
+        与 ``on_start_parse`` 共用 ``_parse_task`` 取消机制——新解析启动时
+        取消旧任务（包括普通解析或预览解析）。
+
+        Args:
+            text: 用户粘贴的链接文本
+        """
+        self._async_worker.submit(self._handle_start_parse_for_preview(text))
 
     def on_start_home_fetch(self, sec_user_id: str, filters: dict) -> None:
         """接收 ``control_signals.start_home_fetch``：启动主页抓取。
@@ -138,6 +155,14 @@ class CrawlerBridge(QObject):
             with contextlib.suppress(asyncio.CancelledError):
                 await self._parse_task
         self._parse_task = asyncio.ensure_future(self._do_parse(text))
+
+    async def _handle_start_parse_for_preview(self, text: str) -> None:
+        """处理启动预览解析：先取消旧任务，再创建新任务（v0.1.7）。"""
+        if self._parse_task is not None and not self._parse_task.done():
+            self._parse_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._parse_task
+        self._parse_task = asyncio.ensure_future(self._do_parse_for_preview(text))
 
     async def _handle_cancel_parse(self) -> None:
         """处理取消解析。"""
@@ -187,6 +212,69 @@ class CrawlerBridge(QObject):
         except Exception as e:
             logger.exception("链接解析失败")
             self._worker_signals.parse_failed.emit(str(e))
+
+    async def _do_parse_for_preview(self, text: str) -> None:
+        """工作线程执行预览解析（v0.1.7）。
+
+        与 ``_do_parse`` 的差异：短链解析后对每个 ``aweme_id`` 调用
+        ``VideoParser.parse_video`` 获取详情（标题/封面/类型/图片直链/视频直链），
+        构造 ``PreviewItem`` 列表 emit ``preview_completed``。复用
+        ``parse_progress`` 信号上报进度，复用 ``_parse_task`` 支持取消。
+
+        Args:
+            text: 用户粘贴的链接文本
+        """
+        if self._video_parser is None:
+            self._worker_signals.preview_failed.emit("预览解析未启用（缺少 VideoParser）")
+            return
+        try:
+            cookie_record = self._cookie_repo.get_valid()
+            if cookie_record is None:
+                self._worker_signals.preview_failed.emit("无可用 Cookie，请先添加")
+                return
+            cookie_content = cookie_record.content
+
+            lines = text.strip().splitlines()
+            links = [line.strip() for line in lines if line.strip()]
+            total = len(links)
+            preview_items: list[PreviewItem] = []
+            failed_count = 0
+            for i, line in enumerate(links, start=1):
+                try:
+                    parsed = await self._url_parser.parse(line)
+                    aweme_id = getattr(parsed, "aweme_id", None)
+                    if not aweme_id:
+                        failed_count += 1
+                        logger.warning("第 %d 行无 aweme_id，跳过: %s", i, line)
+                        continue
+                    video_info = await self._video_parser.parse_video(aweme_id, cookie_content)
+                    preview_items.append(PreviewItem.from_video_info(video_info))
+                except CookieInvalidError:
+                    self._worker_signals.preview_failed.emit("Cookie 失效，请更新")
+                    return
+                except Exception as line_err:
+                    failed_count += 1
+                    logger.warning("第 %d 行预览解析失败，已跳过: %s", i, line_err)
+                self._worker_signals.parse_progress.emit(i, total)
+
+            if not preview_items and failed_count > 0:
+                self._worker_signals.preview_failed.emit(
+                    f"全部 {failed_count} 行链接均解析失败，请检查输入"
+                )
+                return
+
+            self._worker_signals.preview_completed.emit(preview_items)
+            logger.info(
+                "预览解析完成，成功 %d 条，失败 %d 条",
+                len(preview_items),
+                failed_count,
+            )
+        except asyncio.CancelledError:
+            logger.info("预览解析被取消")
+            raise
+        except Exception as e:
+            logger.exception("预览解析失败")
+            self._worker_signals.preview_failed.emit(str(e))
 
     # === 内部协程：主页抓取 ===
 
@@ -294,6 +382,8 @@ class CrawlerBridge(QObject):
         """连接 UI → 工作线程控制信号到对应槽。"""
         self._control_signals.start_parse.connect(self.on_start_parse)
         self._control_signals.cancel_parse.connect(self.on_cancel_parse)
+        # v0.1.7：预览解析（含图片直链）
+        self._control_signals.start_parse_for_preview.connect(self.on_start_parse_for_preview)
         self._control_signals.start_home_fetch.connect(self.on_start_home_fetch)
         self._control_signals.cancel_home_fetch.connect(self.on_cancel_home_fetch)
         self._control_signals.test_cookie.connect(self.on_test_cookie)

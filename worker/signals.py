@@ -60,6 +60,14 @@ class WorkerSignals(QObject):
     # reason，链接解析失败原因
     parse_failed = Signal(str)
 
+    # === 预览解析（v0.1.7）===
+
+    # list[PreviewItem]，预览解析完成的结果列表（含图片直链）
+    preview_completed = Signal(list)
+
+    # reason，预览解析失败原因
+    preview_failed = Signal(str)
+
     # === Cookie 测试 ===
 
     # cookie_id, is_valid, message
@@ -107,6 +115,11 @@ class ControlSignals(QObject):
 
     # 无参数，取消正在进行的解析
     cancel_parse = Signal()
+
+    # === 预览解析控制（v0.1.7）===
+
+    # text（用户粘贴的链接文本），触发预览解析（含图片直链）
+    start_parse_for_preview = Signal(str)
 
     # === 主页抓取控制 ===
 

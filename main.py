@@ -141,6 +141,7 @@ def _create_bridges(
         cookie_repository=cookie_repo,
         worker_signals=worker_signals,
         control_signals=control_signals,
+        video_parser=video_parser,
     )
 
     return download_bridge, crawler_bridge
