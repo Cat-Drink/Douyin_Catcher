@@ -1,17 +1,17 @@
 """下载任务页模块。
 
-实现下载任务页，包含顶部批量操作工具栏、任务列表（可滚动）、
-底部状态栏、空状态引导。接收 Bridge 的 progress_updated/item_completed/
-item_failed 信号实时刷新。
+实现下载任务页，包含顶部批量操作工具栏、任务列表（可滚动）、空状态引导。
+接收 Bridge 的 progress_updated/item_completed/item_failed 信号实时刷新行状态。
 
 严格遵循设计文档 3.1 节页面 1 与 UIUX 规范 5.2 节。
+v0.1.2：移除页面底部状态栏，统计逻辑移至 MainWindow._refresh_nav_status
+        统一在 NavBar 底部全局显示（用户反馈 #14）。
 
 布局结构::
 
     [56px 标题区: "下载任务"]
     [48px 工具栏: 全部暂停 / 全部开始 / 清空已完成]
     [任务列表 QScrollArea + QVBoxLayout]
-    [32px 状态栏: 总数 · 下载中 · 已完成 · 失败]
 """
 
 from __future__ import annotations
@@ -138,14 +138,6 @@ class DownloadPage(QWidget):
         layout.addWidget(self._empty_widget)
         self._empty_widget.setVisible(False)
 
-        # 状态栏
-        self._status_label = QLabel("总数 0 · 下载中 0 · 已完成 0 · 失败 0")
-        self._status_label.setObjectName("statusBarCounts")
-        self._status_label.setFixedHeight(32)
-        self._status_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        self._status_label.setContentsMargins(24, 0, 24, 0)
-        layout.addWidget(self._status_label)
-
     def _create_empty_widget(self) -> QWidget:
         """创建空状态 widget。"""
         widget = QWidget()
@@ -184,7 +176,10 @@ class DownloadPage(QWidget):
         signals.item_failed.connect(self._on_item_failed)
 
     def refresh(self) -> None:
-        """从 DB 加载所有任务项，重建列表，更新状态栏。"""
+        """从 DB 加载所有任务项，重建列表。
+
+        v0.1.2：状态栏统计已移至 MainWindow._refresh_nav_status，本方法不再更新页面状态栏。
+        """
         # 清空旧列表
         self._clear_list()
 
@@ -196,7 +191,6 @@ class DownloadPage(QWidget):
                 self._add_item_widget(item)
 
         self._update_empty_state()
-        self._update_status_bar()
 
     def _clear_list(self) -> None:
         """清空任务列表。"""
@@ -234,24 +228,6 @@ class DownloadPage(QWidget):
         self._empty_widget.setVisible(not has_items)
         self._scroll_area.setVisible(has_items)
 
-    def _update_status_bar(self) -> None:
-        """统计各状态数量，更新状态栏。"""
-        total = len(self._item_widgets)
-        downloading = 0
-        completed = 0
-        failed = 0
-        for widget in self._item_widgets.values():
-            status = widget._task_item.status  # noqa: SLF001
-            if status == "downloading":
-                downloading += 1
-            elif status == "completed":
-                completed += 1
-            elif status == "failed":
-                failed += 1
-        self._status_label.setText(
-            f"总数 {total} · 下载中 {downloading} · 已完成 {completed} · 失败 {failed}"
-        )
-
     def _on_progress_updated(self, updates: list) -> None:
         """Bridge progress_updated 信号槽：批量更新进度。
 
@@ -267,16 +243,19 @@ class DownloadPage(QWidget):
     def _on_item_completed(self, task_item_id: int) -> None:
         """Bridge item_completed 信号槽：标记完成。
 
+        v0.1.2：状态栏刷新由 MainWindow._refresh_nav_status 统一处理。
+
         Args:
             task_item_id: 完成的任务项 ID。
         """
         widget = self._item_widgets.get(task_item_id)
         if widget is not None:
             widget.update_status("completed")
-            self._update_status_bar()
 
     def _on_item_failed(self, task_item_id: int, reason: str) -> None:
         """Bridge item_failed 信号槽：标记失败。
+
+        v0.1.2：状态栏刷新由 MainWindow._refresh_nav_status 统一处理。
 
         Args:
             task_item_id: 失败的任务项 ID。
@@ -285,7 +264,6 @@ class DownloadPage(QWidget):
         widget = self._item_widgets.get(task_item_id)
         if widget is not None:
             widget.update_status("failed", reason)
-            self._update_status_bar()
 
     def _on_clear_completed(self) -> None:
         """清空已完成按钮点击：弹确认后发信号。"""
@@ -316,7 +294,6 @@ class DownloadPage(QWidget):
                 widget.deleteLater()
             self.clear_completed_clicked.emit()
             self._update_empty_state()
-            self._update_status_bar()
 
     def _on_open_file(self, path: str) -> None:
         """打开文件所在文件夹。

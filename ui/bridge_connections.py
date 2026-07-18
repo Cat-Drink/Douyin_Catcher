@@ -37,7 +37,10 @@ UI 槽函数，并将页面信号转发到 Bridge 控制信号，建立 UI 与�
 
     Bridge WorkerSignals → 本地处理（页面未处理的信号）:
         DownloadBridge.cookie_invalid(str) → 弹窗提示 + 切换到 Cookie 页
-        DownloadBridge.task_completed(int) → 刷新下载页状态栏
+        DownloadBridge.task_completed(int) → 刷新下载页 + 刷新 NavBar 状态栏
+
+    v0.1.2：所有改变 task_items 表的本地处理槽函数均触发
+            MainWindow._refresh_nav_status 以同步 NavBar 底部状态栏。
 """
 
 from __future__ import annotations
@@ -188,11 +191,13 @@ class BridgeConnections:
         self._switch_page(2)
 
     def _on_task_completed(self, task_id: int) -> None:
-        """某任务下所有子项完成：刷新下载页。"""
+        """某任务下所有子项完成：刷新下载页 + 刷新 NavBar 状态栏。"""
         logger.info("任务全部完成：task_id=%s", task_id)
         page = self._pages.get("download")
         if page is not None:
             page.refresh()
+        # v0.1.2：同步刷新 NavBar 底部状态栏
+        self._main_window._refresh_nav_status()  # noqa: SLF001
 
     # === DownloadPage 信号槽 ===
 
@@ -204,6 +209,8 @@ class BridgeConnections:
         for item in completed_items:
             item_repo.delete(item.id)  # type: ignore[arg-type]
         logger.info("已清空 %d 条已完成任务", len(completed_items))
+        # v0.1.2：同步刷新 NavBar 底部状态栏
+        self._main_window._refresh_nav_status()  # noqa: SLF001
 
     # === FetchPage 信号槽 ===
 
@@ -254,6 +261,9 @@ class BridgeConnections:
         page = self._pages.get("download")
         if page is not None:
             page.refresh()
+
+        # v0.1.2：同步刷新 NavBar 底部状态栏
+        self._main_window._refresh_nav_status()  # noqa: SLF001
 
         # 切换到下载页
         self._switch_page(0)

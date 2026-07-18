@@ -1,16 +1,17 @@
 """导航栏组件模块。
 
 实现左侧导航栏，包含 4 个导航项（下载任务/链接抓取/Cookie 配置/设置），
-支持点击切换、互斥选中、选中项品牌紫高亮。
+支持点击切换、互斥选中、选中项品牌紫高亮，底部固定下载任务状态栏。
 
 严格遵循 UI/UX 规范 4.1 节（导航栏组件）与 v0.0.7 计划文档任务 4。
+v0.1.2：底部新增下载任务状态栏（用户反馈 #14）。
 
 视觉规范：
     - 导航栏宽 200px 固定，白色背景，右侧 1px 浅灰分隔线
     - 默认态：灰色文字 #6B7280，透明背景
     - Hover 态：深色文字 #111827，浅灰底 #F3F4F6
     - 选中态：品牌紫文字 #7C3AED，浅紫底 #F5F0FF，左侧 3px 品牌紫指示条
-    - 底部显示版本号
+    - 底部固定显示下载任务统计 + 版本号
 """
 
 from __future__ import annotations
@@ -57,11 +58,13 @@ NAV_ITEMS: list[NavItem] = [
 class NavBar(QWidget):
     """左侧导航栏组件。
 
-    包含 Logo 区、4 个互斥导航项按钮、底部版本号。
+    包含 Logo 区、4 个互斥导航项按钮、底部下载任务状态栏与版本号。
     点击导航项时发射 ``page_changed(int)`` 信号。
 
     信号:
         page_changed: 导航项被点击时发射，参数为目标页面索引。
+
+    v0.1.2：新增 ``update_status`` 方法，用于主窗口全局刷新下载任务统计。
     """
 
     page_changed = Signal(int)
@@ -76,10 +79,11 @@ class NavBar(QWidget):
         self.setObjectName("navBar")
         self._button_group: QButtonGroup | None = None
         self._nav_buttons: list[QPushButton] = []
+        self._status_label: QLabel | None = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
-        """构建导航栏布局：Logo + 导航项 + 弹性间距 + 版本号。"""
+        """构建导航栏布局：Logo + 导航项 + 弹性间距 + 状态栏 + 版本号。"""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -96,8 +100,13 @@ class NavBar(QWidget):
         for item in NAV_ITEMS:
             self._add_nav_item(item)
 
-        # 弹性间距，将版本号推到底部
+        # 弹性间距，将状态栏与版本号推到底部
         layout.addStretch(1)
+
+        # v0.1.2：底部下载任务状态栏（固定显示在侧边栏底部）
+        self._status_label = QLabel("总数 0 · 下载中 0 · 已完成 0 · 失败 0")
+        self._status_label.setObjectName("navStatusBar")
+        layout.addWidget(self._status_label)
 
         # 底部版本号（延迟导入避免循环依赖，版本号单一来源为 ui.main_window._APP_VERSION）
         from ui.main_window import _APP_VERSION
@@ -156,3 +165,18 @@ class NavBar(QWidget):
             logger.warning("set_current_page index 越界: %s", index)
             return
         self._nav_buttons[index].setChecked(True)
+
+    def update_status(self, total: int, downloading: int, completed: int, failed: int) -> None:
+        """更新底部下载任务状态栏文字（v0.1.2）。
+
+        Args:
+            total: 总任务数。
+            downloading: 下载中数。
+            completed: 已完成数。
+            failed: 失败数。
+        """
+        if self._status_label is None:
+            return
+        self._status_label.setText(
+            f"总数 {total} · 下载中 {downloading} · 已完成 {completed} · 失败 {failed}"
+        )

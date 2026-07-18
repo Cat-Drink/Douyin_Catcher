@@ -1,9 +1,12 @@
 """主窗口框架模块。
 
-实现主窗口，包含左侧导航栏（200px）+ 右侧内容区（QStackedWidget，
-4 个页面）+ 底部状态栏（32px）。
+实现主窗口，包含左侧导航栏（200px，底部含下载任务状态栏与版本号）+
+右侧内容区（QStackedWidget，4 个页面）。
 
 严格遵循 UI/UX 规范 5.1 节（主窗口框架）与 v0.0.7 计划文档任务 3。
+v0.1.2：移除 QMainWindow QStatusBar，状态栏统一移至 NavBar 底部；
+        新增 _refresh_nav_status 从 DB 统计任务项并刷新 NavBar 状态栏，
+        通过 QTimer 300ms 防抖避免 progress_updated 高频刷新。
 
 布局结构::
 
@@ -11,14 +14,16 @@
       └─ centralWidget (QWidget)
            └─ QHBoxLayout
                 ├─ NavBar (200px 固定)
+                │    ├─ navLogo
+                │    ├─ navItem × 4
+                │    ├─ addStretch
+                │    ├─ navStatusBar (下载任务统计)
+                │    └─ navVersion
                 └─ QStackedWidget (自适应)
                      ├─ DownloadPage (index 0)
                      ├─ FetchPage (index 1)
                      ├─ CookiePage (index 2)
                      └─ SettingsPage (index 3)
-      └─ QStatusBar
-           ├─ QLabel#statusBarCounts (左侧)
-           └─ QLabel#statusBarVersion (右侧)
 """
 
 from __future__ import annotations
@@ -26,18 +31,18 @@ from __future__ import annotations
 import sqlite3
 from typing import TYPE_CHECKING
 
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QHBoxLayout,
-    QLabel,
     QMainWindow,
     QMessageBox,
     QStackedWidget,
-    QStatusBar,
     QWidget,
 )
 
 from app.logger import get_logger
+from app.repositories import TaskItemRepository
 from ui.bridge_connections import BridgeConnections
 from ui.pages.cookie_page import CookiePage
 from ui.pages.download_page import DownloadPage
@@ -59,12 +64,22 @@ APP_VERSION = f"v{_APP_VERSION}"  # 向后兼容别名，供 main.py 与测试�
 MIN_WINDOW_SIZE = (800, 600)
 DEFAULT_WINDOW_SIZE = (1280, 800)
 
+# v0.1.2：NavBar 状态栏刷新防抖间隔（毫秒）
+# progress_updated 信号高频触发，防抖避免 UI 卡顿（计划 8.2.1 节）
+_NAV_STATUS_DEBOUNCE_MS = 300
+
+# 下载任务项状态枚举（与 DB task_items.status 字段一致）
+_STATUS_DOWNLOADING = "downloading"
+_STATUS_COMPLETED = "completed"
+_STATUS_FAILED = "failed"
+
 
 class MainWindow(QMainWindow):
     """主窗口框架。
 
-    组合 NavBar + QStackedWidget(4 页面) + QStatusBar，
-    连接 NavBar.page_changed 信号切换页面。
+    组合 NavBar（含底部状态栏）+ QStackedWidget(4 页面)，
+    连接 NavBar.page_changed 信号切换页面，连接 Bridge WorkerSignals
+    到 _refresh_nav_status 实时刷新 NavBar 底部状态栏。
     """
 
     def __init__(
@@ -89,15 +104,18 @@ class MainWindow(QMainWindow):
 
         self._nav_bar: NavBar | None = None
         self._stacked_widget: QStackedWidget | None = None
-        self._status_counts_label: QLabel | None = None
         self._bridge_connections: BridgeConnections | None = None
         self._error_handler: ErrorHandler | None = None
         self._pages: dict[str, QWidget] = {}
+        # v0.1.2：NavBar 状态栏防抖 QTimer，避免 progress_updated 高频刷新
+        self._nav_status_timer: QTimer | None = None
 
         self._setup_ui()
         self._setup_window()
-        self._setup_status_bar()
+        self._setup_nav_status_refresh()
         self._setup_connections()
+        # v0.1.2：启动时从 DB 加载初始统计，不依赖信号触发（计划 8.2.2 节）
+        self._refresh_nav_status()
 
     def _setup_ui(self) -> None:
         """构建整体布局：导航栏 + 内容区。"""
@@ -146,18 +164,58 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(*MIN_WINDOW_SIZE)
         self.resize(*DEFAULT_WINDOW_SIZE)
 
-    def _setup_status_bar(self) -> None:
-        """创建底部状态栏：左侧计数 + 右侧版本号。"""
-        status_bar = QStatusBar()
-        self.setStatusBar(status_bar)
+    def _setup_nav_status_refresh(self) -> None:
+        """v0.1.2：创建 NavBar 状态栏防抖 QTimer 并连接 Bridge 信号。
 
-        self._status_counts_label = QLabel("总数 0 · 下载中 0 · 已完成 0 · 失败 0")
-        self._status_counts_label.setObjectName("statusBarCounts")
-        status_bar.addWidget(self._status_counts_label)
+        防抖机制：progress_updated 等信号高频触发时，仅保留最后一次触发后
+        300ms 执行一次实际刷新，避免 UI 卡顿（计划 8.2.1 节）。
+        """
+        self._nav_status_timer = QTimer(self)
+        self._nav_status_timer.setSingleShot(True)
+        self._nav_status_timer.setInterval(_NAV_STATUS_DEBOUNCE_MS)
+        self._nav_status_timer.timeout.connect(self._refresh_nav_status)
 
-        version_label = QLabel(APP_VERSION)
-        version_label.setObjectName("statusBarVersion")
-        status_bar.addPermanentWidget(version_label)
+        # 连接 DownloadBridge WorkerSignals 到防抖刷新槽
+        signals = self._download_bridge._worker_signals  # noqa: SLF001
+        signals.progress_updated.connect(self._schedule_nav_status_refresh)
+        signals.item_completed.connect(self._schedule_nav_status_refresh)
+        signals.item_failed.connect(self._schedule_nav_status_refresh)
+        signals.task_completed.connect(self._schedule_nav_status_refresh)
+        logger.debug("NavBar 状态栏刷新信号已连接")
+
+    def _schedule_nav_status_refresh(self, *args) -> None:
+        """防抖触发 NavBar 状态栏刷新（忽略信号参数）。
+
+        任意 Bridge 信号到达时启动/重启 300ms 定时器，仅最后一次触发后
+        实际刷新一次。
+        """
+        if self._nav_status_timer is not None:
+            self._nav_status_timer.start()
+
+    def _refresh_nav_status(self) -> None:
+        """v0.1.2：从 DB 统计任务项各状态数量，刷新 NavBar 底部状态栏。
+
+        数据源为 TaskItemRepository.get_by_status，确保跨页面一致性
+        （非下载页时也能实时显示）。状态枚举与 DB task_items.status 字段一致。
+
+        异常处理：捕获 Exception 而非 sqlite3.Error，避免 row 解析失败等
+        非预期异常导致 UI 崩溃（UI 刷新应 fail-silent）。
+        """
+        if self._nav_bar is None:
+            return
+        try:
+            item_repo = TaskItemRepository(self._conn)
+            downloading = len(item_repo.get_by_status(_STATUS_DOWNLOADING))
+            completed = len(item_repo.get_by_status(_STATUS_COMPLETED))
+            failed = len(item_repo.get_by_status(_STATUS_FAILED))
+            # 总数 = 下载中 + 已完成 + 失败 + 待处理（pending/paused）
+            pending = len(item_repo.get_by_status("pending"))
+            paused = len(item_repo.get_by_status("paused"))
+            total = downloading + completed + failed + pending + paused
+        except Exception as e:  # noqa: BLE001 - UI 刷新 fail-silent
+            logger.error("刷新 NavBar 状态栏失败: %s", e)
+            return
+        self._nav_bar.update_status(total, downloading, completed, failed)
 
     def _setup_connections(self) -> None:
         """创建 BridgeConnections 并连接所有 Bridge 信号。"""
@@ -181,22 +239,6 @@ class MainWindow(QMainWindow):
         if widget is not None and hasattr(widget, "refresh"):
             widget.refresh()
         logger.debug("切换到页面 index=%s", index)
-
-    def update_status_counts(
-        self, total: int, downloading: int, completed: int, failed: int
-    ) -> None:
-        """更新状态栏左侧计数文本。
-
-        Args:
-            total: 总任务数。
-            downloading: 下载中数。
-            completed: 已完成数。
-            failed: 失败数。
-        """
-        if self._status_counts_label is None:
-            return
-        text = f"总数 {total} · 下载中 {downloading} · 已完成 {completed} · 失败 {failed}"
-        self._status_counts_label.setText(text)
 
     def set_error_handler(self, error_handler: ErrorHandler) -> None:
         """注入 ErrorHandler 实例。
