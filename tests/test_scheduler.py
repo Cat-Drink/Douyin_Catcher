@@ -9,13 +9,15 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import httpx
 import respx
 
 from app.database import get_memory_connection
 from app.models import Task, TaskItem
-from app.repositories import TaskItemRepository, TaskRepository
+from app.repositories import CookieRepository, TaskItemRepository, TaskRepository
+from crawlers.video_parser import VideoParser
 from downloader.progress_reporter import ProgressUpdate
 from downloader.scheduler import (
     DEFAULT_DOWNLOAD_CONNECT_TIMEOUT,
@@ -613,6 +615,71 @@ class TestDownloadTimeoutConfig:
         """下载超时常量可从 downloader.scheduler 导入且值正确。"""
         assert DEFAULT_DOWNLOAD_CONNECT_TIMEOUT == 30.0
         assert DEFAULT_DOWNLOAD_READ_TIMEOUT == 60.0
+
+
+# ==================== 重新解析依赖注入测试（v0.1.7 plan 6.6 / v0.1.8 plan 1）====================
+
+
+class TestReparseDepsInjection:
+    """Scheduler 构造函数 video_parser/cookie_repository 参数注入测试。
+
+    v0.1.7 plan 6.6 为 Scheduler 新增两个可选依赖用于图集直链失效重新解析。
+    这两个参数需原样透传给内部 Downloader，为 None 时保持原行为（4xx 直接失败）。
+    """
+
+    def test_default_reparse_deps_are_none(self) -> None:
+        """未注入时，内部 Downloader 持有的两个依赖均为 None。"""
+        scheduler = _make_scheduler()
+        assert scheduler._downloader._video_parser is None
+        assert scheduler._downloader._cookie_repository is None
+
+    def test_video_parser_injected_to_downloader(self) -> None:
+        """注入 video_parser 时，原样透传给内部 Downloader。"""
+        video_parser = MagicMock(spec=VideoParser)
+        scheduler = Scheduler(
+            conn=get_memory_connection(),
+            video_parser=video_parser,
+        )
+        assert scheduler._downloader._video_parser is video_parser
+
+    def test_cookie_repository_injected_to_downloader(self) -> None:
+        """注入 cookie_repository 时，原样透传给内部 Downloader。"""
+        conn = get_memory_connection()
+        cookie_repo = MagicMock(spec=CookieRepository)
+        scheduler = Scheduler(
+            conn=conn,
+            cookie_repository=cookie_repo,
+        )
+        assert scheduler._downloader._cookie_repository is cookie_repo
+
+    def test_both_reparse_deps_injected_to_downloader(self) -> None:
+        """同时注入两个依赖时，均原样透传给内部 Downloader。"""
+        video_parser = MagicMock(spec=VideoParser)
+        cookie_repo = MagicMock(spec=CookieRepository)
+        scheduler = Scheduler(
+            conn=get_memory_connection(),
+            video_parser=video_parser,
+            cookie_repository=cookie_repo,
+        )
+        assert scheduler._downloader._video_parser is video_parser
+        assert scheduler._downloader._cookie_repository is cookie_repo
+
+    def test_reparse_deps_independent_of_http_client(self) -> None:
+        """注入外部 http_client 时不影响重新解析依赖的透传。"""
+        external_client = httpx.AsyncClient(timeout=httpx.Timeout(5.0))
+        video_parser = MagicMock(spec=VideoParser)
+        cookie_repo = MagicMock(spec=CookieRepository)
+        scheduler = Scheduler(
+            conn=get_memory_connection(),
+            http_client=external_client,
+            video_parser=video_parser,
+            cookie_repository=cookie_repo,
+        )
+        # http_client 透传
+        assert scheduler._http_client is external_client
+        # 重新解析依赖也透传
+        assert scheduler._downloader._video_parser is video_parser
+        assert scheduler._downloader._cookie_repository is cookie_repo
 
 
 # ==================== 辅助函数 ====================
