@@ -116,6 +116,8 @@ class BridgeConnections:
         signals = self._download_bridge._worker_signals  # noqa: SLF001
         signals.cookie_invalid.connect(self._on_cookie_invalid)
         signals.task_completed.connect(self._on_task_completed)
+        # v0.1.6：入队成功后清理抓取页（用户反馈 #6）
+        signals.download_started.connect(self._on_download_started)
         logger.debug("DownloadBridge 信号已连接")
 
     def _connect_crawler_bridge_signals(self) -> None:
@@ -204,6 +206,27 @@ class BridgeConnections:
             page.refresh()
         # v0.1.2：同步刷新 NavBar 底部状态栏
         self._main_window._refresh_nav_status()  # noqa: SLF001
+
+    def _on_download_started(self, task_id: int) -> None:
+        """v0.1.6：一批任务项已加入下载队列：清理抓取页内容。
+
+        ``DownloadBridge._do_start_download`` 在 ``scheduler.add_task_items``
+        成功后 emit ``download_started(task_id)``，触发本槽。调用
+        ``FetchPage.clear_after_download_started`` 清空输入框/结果列表/过滤栏/
+        全选状态，避免干扰用户继续操作（用户反馈 #6）。
+
+        入队失败时（``download_started`` 未到达）抓取页内容保留供用户重试。
+
+        Args:
+            task_id: 已入队的任务 ID（仅用于日志）。
+        """
+        page = self._pages.get("fetch")
+        if page is None:
+            return
+        if not hasattr(page, "clear_after_download_started"):
+            return
+        page.clear_after_download_started()
+        logger.info("抓取页已清理（task_id=%s 入队成功）", task_id)
 
     # === DownloadPage 信号槽 ===
 
