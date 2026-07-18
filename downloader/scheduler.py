@@ -16,6 +16,7 @@ import asyncio
 import contextlib
 import sqlite3
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import httpx
 
@@ -24,6 +25,10 @@ from app.models import TaskItem
 from app.repositories import TaskItemRepository
 from downloader.downloader import Downloader
 from downloader.progress_reporter import ProgressReporter, ProgressUpdate
+
+if TYPE_CHECKING:
+    from app.repositories import CookieRepository
+    from crawlers.video_parser import VideoParser
 
 logger = get_logger(__name__)
 
@@ -71,6 +76,8 @@ class Scheduler:
         on_item_completed: Callable[[int], None] | None = None,
         on_item_failed: Callable[[int, str], None] | None = None,
         on_progress: Callable[[list[ProgressUpdate]], None] | None = None,
+        video_parser: VideoParser | None = None,
+        cookie_repository: CookieRepository | None = None,
     ) -> None:
         """初始化调度器。
 
@@ -81,6 +88,10 @@ class Scheduler:
             on_item_completed: 下载成功回调，参数 task_item_id
             on_item_failed: 下载失败回调，参数 (task_item_id, fail_reason)
             on_progress: 进度批量回调，参数 list[ProgressUpdate]
+            video_parser: 图集直链失效重新解析依赖（v0.1.7 plan 6.6）；
+                为 None 时图集 4xx 直接失败不重新解析
+            cookie_repository: 重新解析时取有效 Cookie（v0.1.7 plan 6.6）；
+                为 None 时图集 4xx 直接失败不重新解析
         """
         self._conn = conn
         self._item_repo = TaskItemRepository(conn)
@@ -112,6 +123,8 @@ class Scheduler:
             http_client=self._http_client,
             semaphore=self._semaphore,
             conn=conn,
+            video_parser=video_parser,
+            cookie_repository=cookie_repository,
         )
 
         # 内部状态

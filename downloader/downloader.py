@@ -20,11 +20,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sqlite3
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import httpx
@@ -38,6 +40,10 @@ from downloader.constants import (
     SEGMENT_SIZE,
 )
 from downloader.progress_reporter import ProgressReporter
+
+if TYPE_CHECKING:
+    from app.repositories import CookieRepository
+    from crawlers.video_parser import VideoParser
 
 logger = get_logger(__name__)
 
@@ -80,6 +86,31 @@ class DownloadResult:
     error: str | None = None
 
 
+def _select_urls_by_indices(urls: list[str], selected_indices_str: str) -> list[str]:
+    """按 selected_image_indices JSON 字符串筛选 url 列表。
+
+    语义与 ``worker.download_bridge._filter_image_urls`` 一致；
+    在 downloader 内复制以避免 downloader→worker 循环依赖。
+
+    Args:
+        urls: 全量 url 列表
+        selected_indices_str: 勾选索引 JSON 数组字符串；
+            空字符串表示全选；非法 JSON 按全选处理
+
+    Returns:
+        筛选后的 url 列表
+    """
+    if not selected_indices_str:
+        return list(urls)
+    try:
+        indices = json.loads(selected_indices_str)
+    except (json.JSONDecodeError, TypeError):
+        return list(urls)
+    if not isinstance(indices, list):
+        return list(urls)
+    return [urls[i] for i in indices if isinstance(i, int) and 0 <= i < len(urls)]
+
+
 class Downloader:
     """单项下载器。
 
@@ -96,6 +127,8 @@ class Downloader:
         http_client: httpx.AsyncClient,
         semaphore: asyncio.Semaphore,
         conn: sqlite3.Connection,
+        video_parser: VideoParser | None = None,
+        cookie_repository: CookieRepository | None = None,
     ) -> None:
         """初始化下载器。
 
@@ -104,6 +137,10 @@ class Downloader:
             http_client: httpx 异步客户端
             semaphore: 并发信号量（图集子任务也受此约束）
             conn: SQLite 连接（用于状态持久化与 download_dir 查询）
+            video_parser: 图集直链失效时用于重新解析（v0.1.7 plan 6.6）；
+                为 None 时图集 4xx 直接失败不重新解析
+            cookie_repository: 重新解析时取有效 Cookie（v0.1.7 plan 6.6）；
+                为 None 时图集 4xx 直接失败不重新解析
         """
         self._progress_reporter = progress_reporter
         self._http_client = http_client
@@ -111,6 +148,8 @@ class Downloader:
         self._conn = conn
         self._item_repo = TaskItemRepository(conn)
         self._task_repo = TaskRepository(conn)
+        self._video_parser = video_parser
+        self._cookie_repository = cookie_repository
 
     # === 路径推导 ===
 
@@ -812,6 +851,93 @@ class Downloader:
                 await self._retry_with_backoff(retry_count)
                 continue
 
+    # === 图集直链失效重新解析（v0.1.7 plan 6.6）===
+
+    def _is_link_expired(self, error: str | None) -> bool:
+        """判断下载失败原因是否为图片直链失效（403/404）。
+
+        Args:
+            error: ``DownloadResult.error`` 字符串
+
+        Returns:
+            失效返回 True（可重新解析），其他错误返回 False
+        """
+        if not error:
+            return False
+        return "HTTP 403" in error or "HTTP 404" in error
+
+    def _can_reparse(self) -> bool:
+        """是否具备图片直链重新解析能力。
+
+        需要 ``video_parser`` 和 ``cookie_repository`` 同时注入。
+        """
+        return self._video_parser is not None and self._cookie_repository is not None
+
+    def _get_cookie_string(self) -> str | None:
+        """从 Cookie 池取一个有效 Cookie 字符串。
+
+        Returns:
+            Cookie ``content`` 字符串；无可用 Cookie 返回 None
+        """
+        if self._cookie_repository is None:
+            return None
+        cookie = self._cookie_repository.get_valid()
+        return cookie.content if cookie else None
+
+    async def _reparse_single_image_url(
+        self,
+        task_item: TaskItem,
+        idx: int,
+    ) -> str | None:
+        """图片直链失效时重新解析，返回指定索引的新 url。
+
+        按 plan 6.6：调用 ``VideoParser.parse_video`` 重新获取全量 image_urls，
+        再按 ``task_item.selected_image_indices`` 重新筛选，取第 idx 个。
+        重新解析失败返回 None（由调用方按原失败结果处理）。
+
+        Args:
+            task_item: 任务项
+            idx: 在已筛选子集中的 0-based 索引
+
+        Returns:
+            新的图片直链；无法重新解析返回 None
+        """
+        if not self._can_reparse():
+            return None
+        if task_item.aweme_id is None:
+            logger.warning(
+                "aweme_id 为空，无法重新解析 task_item id=%s",
+                task_item.id,
+            )
+            return None
+        cookie = self._get_cookie_string()
+        if cookie is None:
+            logger.warning(
+                "无可用 Cookie，无法重新解析 task_item id=%s",
+                task_item.id,
+            )
+            return None
+        try:
+            video_info = await self._video_parser.parse_video(task_item.aweme_id, cookie)
+        except Exception as e:
+            logger.warning(
+                "图片直链重新解析失败 task_item id=%s: %s",
+                task_item.id,
+                e,
+            )
+            return None
+        new_all_urls = list(video_info.image_urls or [])
+        new_selected = _select_urls_by_indices(new_all_urls, task_item.selected_image_indices)
+        if 0 <= idx < len(new_selected):
+            return new_selected[idx]
+        logger.warning(
+            "重新解析后索引 %d 越界（共 %d 张）task_item id=%s",
+            idx,
+            len(new_selected),
+            task_item.id,
+        )
+        return None
+
     async def _download_image_set(
         self,
         task_item: TaskItem,
@@ -849,9 +975,9 @@ class Downloader:
         completed_count = 0
         completed_lock = asyncio.Lock()
 
-        async def _download_one(i: int, url: str) -> DownloadResult:
+        async def _download_one(seq: int, url: str) -> DownloadResult:
             nonlocal completed_count
-            final_path = self._get_final_path(task_item, url, index=i)
+            final_path = self._get_final_path(task_item, url, index=seq)
             final_path.parent.mkdir(parents=True, exist_ok=True)
             result = await self._download_single_file(
                 task_item,
@@ -860,6 +986,23 @@ class Downloader:
                 mark_status=False,
                 report_progress=False,
             )
+            # 图片直链失效重新解析（v0.1.7 plan 6.6）
+            if not result.success and self._is_link_expired(result.error):
+                # seq 为 1-based 序号，转 0-based 索引取重新解析后的 url
+                new_url = await self._reparse_single_image_url(task_item, seq - 1)
+                if new_url is not None:
+                    logger.info(
+                        "图片 %d 直链失效，重新解析后重试 task_item id=%s",
+                        seq,
+                        task_item.id,
+                    )
+                    result = await self._download_single_file(
+                        task_item,
+                        new_url,
+                        final_path,
+                        mark_status=False,
+                        report_progress=False,
+                    )
             if result.success:
                 async with completed_lock:
                     completed_count += 1
