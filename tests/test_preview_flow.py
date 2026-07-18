@@ -528,8 +528,7 @@ class TestDatabaseMigrationV2:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         # 建 v1 task_items 表（无 selected_image_indices）
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 source_type TEXT NOT NULL,
@@ -541,10 +540,8 @@ class TestDatabaseMigrationV2:
                 updated_at TEXT NOT NULL,
                 download_dir TEXT NOT NULL
             )
-        """
-        )
-        conn.execute(
-            """
+        """)
+        conn.execute("""
             CREATE TABLE task_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -566,16 +563,13 @@ class TestDatabaseMigrationV2:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
-        """
-        )
-        conn.execute(
-            """
+        """)
+        conn.execute("""
             CREATE TABLE schema_version (
                 version INTEGER PRIMARY KEY,
                 applied_at TEXT NOT NULL
             )
-        """
-        )
+        """)
         # 写入 v1 版本记录
         conn.execute("INSERT INTO schema_version(version, applied_at) VALUES (1, '2026-07-01')")
         conn.commit()
@@ -599,8 +593,7 @@ class TestDatabaseMigrationV2:
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE task_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 url TEXT NOT NULL,
@@ -609,16 +602,13 @@ class TestDatabaseMigrationV2:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
-        """
-        )
-        conn.execute(
-            """
+        """)
+        conn.execute("""
             CREATE TABLE schema_version (
                 version INTEGER PRIMARY KEY,
                 applied_at TEXT NOT NULL
             )
-        """
-        )
+        """)
         conn.execute("INSERT INTO schema_version(version, applied_at) VALUES (1, '2026-07-01')")
         conn.commit()
 
