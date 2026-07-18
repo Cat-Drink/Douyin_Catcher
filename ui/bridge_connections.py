@@ -30,7 +30,9 @@ UI 槽函数，并将页面信号转发到 Bridge 控制信号，建立 UI 与�
     页面信号 → 本地处理:
         DownloadPage.clear_completed_clicked() → 删除 DB 中已完成任务项
         DownloadPage.navigate_to_fetch()       → 切换到链接抓取页
-        FetchPage.download_requested(list,str) → 创建 Task/TaskItem + 启动下载
+        FetchPage.download_requested(list)     → 创建 Task/TaskItem + 启动下载
+            v0.1.3：下载目录从设置页 ConfigRepository.get("download_dir") 读取，
+            不再由抓取页传入。
         CookiePage.add_cookie_requested(str,str)  → CookieRepository.add
         CookiePage.remove_cookie_requested(int)   → CookieRepository.remove
         SettingsPage.settings_changed(dict)       → 日志记录
@@ -52,6 +54,7 @@ from PySide6.QtWidgets import QMessageBox, QWidget
 from app.logger import get_logger
 from app.models import Cookie, Task, TaskItem
 from app.repositories import (
+    ConfigRepository,
     CookieRepository,
     TaskItemRepository,
     TaskRepository,
@@ -214,17 +217,32 @@ class BridgeConnections:
 
     # === FetchPage 信号槽 ===
 
-    def _on_download_requested(self, aweme_ids: list, download_dir: str) -> None:
-        """开始下载：创建 Task/TaskItem，提交到下载队列。
+    def _on_download_requested(self, aweme_ids: list) -> None:
+        """开始下载：从设置页读取下载目录，创建 Task/TaskItem，提交到下载队列。
+
+        v0.1.3：下载目录不再由抓取页传入，统一从 ``ConfigRepository`` 读取
+        （用户反馈 #9）。若 ``download_dir`` 为空，弹窗提示
+        "请先在设置页配置下载目录"并返回，不创建任务。
 
         Args:
             aweme_ids: 待下载的 aweme_id 列表。
-            download_dir: 下载目录。
         """
         if not aweme_ids:
             return
 
         conn = self._main_window._conn  # noqa: SLF001
+        config_repo = ConfigRepository(conn)
+        download_dir = config_repo.get("download_dir")
+        if not download_dir:
+            logger.warning("下载目录未配置，阻止入队 %d 项", len(aweme_ids))
+            QMessageBox.warning(
+                self._main_window,
+                "未配置下载目录",
+                "请先在设置页配置下载目录后再开始下载。",
+                QMessageBox.StandardButton.Ok,
+            )
+            return
+
         task_repo = TaskRepository(conn)
         item_repo = TaskItemRepository(conn)
 

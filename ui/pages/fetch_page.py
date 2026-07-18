@@ -9,12 +9,14 @@
 
     [56px 标题区: "链接抓取"]
     [输入区: QPlainTextEdit(120px) + 导入文件按钮]
-    [操作行: 开始解析按钮          开始下载(N)]  ← v0.1.2：开始下载按钮移至此处
+    [操作行: 开始解析按钮          开始下载(N)]
     [提示行（检测到主页链接时）]
     [过滤栏（主页链接时显示）]
     [列表头: 全选 + 已选计数]
     [解析结果列表 QScrollArea]
-    [56px 底部操作栏: 下载目录 + 浏览]  ← v0.1.2：仅保留下载目录（v0.1.3 移除）
+
+v0.1.3：移除底部下载目录显示与浏览按钮，下载目录统一在设置页配置
+（用户反馈 #9）。
 """
 
 from __future__ import annotations
@@ -27,7 +29,6 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
@@ -177,14 +178,15 @@ class FetchPage(QWidget):
     信号:
         parse_requested: 点击"开始解析"，传输入框文本。
         home_fetch_requested: 点击过滤栏"开始抓取"，传 sec_user_id 与 filters。
-        download_requested: 点击"开始下载"，传选中的 aweme_id 列表与下载目录。
+        download_requested: 点击"开始下载"，传选中的 aweme_id 列表。
+            v0.1.3：下载目录不再由抓取页传入，由 Bridge 从设置页配置读取。
         cancel_parse_requested: 取消解析。
         cancel_home_fetch_requested: 取消主页抓取。
     """
 
     parse_requested = Signal(str)
     home_fetch_requested = Signal(str, dict)
-    download_requested = Signal(list, str)
+    download_requested = Signal(list)
     cancel_parse_requested = Signal()
     cancel_home_fetch_requested = Signal()
 
@@ -198,7 +200,7 @@ class FetchPage(QWidget):
 
         Args:
             crawler_bridge: 爬虫层桥接器。
-            conn: 数据库连接（读取默认下载目录）。
+            conn: 数据库连接（保留供未来扩展，v0.1.3 起本页不再读取下载目录）。
             parent: 父控件。
         """
         super().__init__(parent)
@@ -309,26 +311,6 @@ class FetchPage(QWidget):
 
         layout.addWidget(content, 1)
 
-        # 底部操作栏：仅保留下载目录与浏览按钮（v0.1.2：开始下载按钮已移至操作行，
-        # 下载目录显示暂保留，v0.1.3 再移除）
-        bottom = QWidget()
-        bottom.setFixedHeight(56)
-        bottom.setStyleSheet("border-top: 1px solid #E5E7EB;")
-        bottom_layout = QHBoxLayout(bottom)
-        bottom_layout.setContentsMargins(24, 8, 24, 8)
-        bottom_layout.setSpacing(12)
-
-        bottom_layout.addWidget(QLabel("下载目录:"))
-        self._dir_edit = QLineEdit()
-        self._dir_edit.setPlaceholderText("选择下载目录...")
-        bottom_layout.addWidget(self._dir_edit, 1)
-
-        browse_btn = QPushButton("浏览...")
-        browse_btn.clicked.connect(self._on_browse_dir)
-        bottom_layout.addWidget(browse_btn)
-
-        layout.addWidget(bottom)
-
     def _create_empty_widget(self) -> QWidget:
         """创建空状态 widget。"""
         widget = QWidget()
@@ -357,13 +339,13 @@ class FetchPage(QWidget):
         signals.home_fetch_failed.connect(self.on_home_fetch_failed)
 
     def refresh(self) -> None:
-        """刷新页面（从 DB 读取默认下载目录）。"""
-        from app.repositories import ConfigRepository
+        """刷新页面。
 
-        config_repo = ConfigRepository(self._conn)
-        download_dir = config_repo.get("download_dir")
-        if isinstance(download_dir, str) and download_dir and not self._dir_edit.text():
-            self._dir_edit.setText(download_dir)
+        v0.1.3：抓取页不再持有下载目录控件，本方法为空实现保留以符合
+        ``Page`` 接口约定（``BridgeConnections`` 与 ``MainWindow`` 在
+        页面切换等时机统一调用各页 ``refresh()``）。
+        """
+        return
 
     def _on_import_file(self) -> None:
         """导入文件按钮点击。"""
@@ -546,23 +528,16 @@ class FetchPage(QWidget):
         self._download_btn.setText(f"开始下载 ({selected})")
         self._download_btn.setEnabled(selected > 0)
 
-    def _on_browse_dir(self) -> None:
-        """浏览下载目录。"""
-        dir_path = QFileDialog.getExistingDirectory(self, "选择下载目录")
-        if dir_path:
-            self._dir_edit.setText(dir_path)
-
     def _on_download_clicked(self) -> None:
-        """开始下载按钮点击。"""
-        dir_path = self._dir_edit.text().strip()
-        if not dir_path:
-            self._dir_edit.setStyleSheet("border: 1px solid #EF4444;")
-            return
-        self._dir_edit.setStyleSheet("")
+        """开始下载按钮点击。
 
+        v0.1.3：下载目录不再由抓取页传入，``download_requested`` 仅传 aweme_id 列表。
+        下载目录为空校验由 ``BridgeConnections._on_download_requested`` 负责，
+        从设置页配置读取；为空时弹窗提示"请先在设置页配置下载目录"。
+        """
         aweme_ids = [w.aweme_id for w in self._result_widgets if w.is_selected()]
         if aweme_ids:
-            self.download_requested.emit(aweme_ids, dir_path)
+            self.download_requested.emit(aweme_ids)
             Toast.show_success(self, f"已加入下载队列（{len(aweme_ids)} 项）")
 
     def _show_input_error(self, message: str) -> None:
