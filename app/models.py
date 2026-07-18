@@ -104,6 +104,8 @@ class TaskItem:
     retry_count: int = 0
     fail_reason: str | None = None
     local_path: str | None = None
+    # v0.1.7：图片级勾选状态持久化（JSON 数组，如 "[0,1,3]"；空字符串表示全选）
+    selected_image_indices: str = ""
     created_at: str = ""
     updated_at: str = ""
 

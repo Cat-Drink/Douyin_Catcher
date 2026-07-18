@@ -54,6 +54,7 @@ def _row_to_task_item(row: sqlite3.Row) -> TaskItem:
         retry_count=row["retry_count"],
         fail_reason=row["fail_reason"],
         local_path=row["local_path"],
+        selected_image_indices=row["selected_image_indices"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -215,8 +216,8 @@ class TaskItemRepository:
                     (task_id, aweme_id, url, title, author, author_sec_id,
                      type, duration, image_count, cover_url, status,
                      downloaded_bytes, total_bytes, retry_count, fail_reason,
-                     local_path, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     local_path, selected_image_indices, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     item.task_id,
@@ -235,6 +236,7 @@ class TaskItemRepository:
                     item.retry_count,
                     item.fail_reason,
                     item.local_path,
+                    item.selected_image_indices,
                     created_at,
                     updated_at,
                 ),
@@ -330,10 +332,12 @@ class TaskItemRepository:
         author: str | None = None,
         duration: str | None = None,
         cover_url: str | None = None,
+        image_count: int | None = None,
     ) -> None:
         """更新任务项的下载直链与类型（解析后回填）。
 
-        可选字段（title/author/duration/cover_url）非 None 时一并更新。
+        可选字段（title/author/duration/cover_url/image_count）非 None 时一并更新。
+        v0.1.7：新增 image_count 参数，让下载页能立即显示图集图片数。
         """
         now = now_iso()
         with self._conn:
@@ -345,10 +349,34 @@ class TaskItemRepository:
                     author = COALESCE(?, author),
                     duration = COALESCE(?, duration),
                     cover_url = COALESCE(?, cover_url),
+                    image_count = COALESCE(?, image_count),
                     updated_at = ?
                 WHERE id = ?
                 """,
-                (url, item_type, title, author, duration, cover_url, now, item_id),
+                (
+                    url,
+                    item_type,
+                    title,
+                    author,
+                    duration,
+                    cover_url,
+                    image_count,
+                    now,
+                    item_id,
+                ),
+            )
+
+    def update_selected_image_indices(self, item_id: int, selected_image_indices: str) -> None:
+        """更新任务项的图片级勾选状态（v0.1.7）。
+
+        Args:
+            item_id: 任务项 id
+            selected_image_indices: JSON 数组字符串，如 "[0,1,3]"；空字符串表示全选
+        """
+        with self._conn:
+            self._conn.execute(
+                "UPDATE task_items SET selected_image_indices = ?, updated_at = ? " "WHERE id = ?",
+                (selected_image_indices, now_iso(), item_id),
             )
 
     def delete(self, item_id: int) -> None:

@@ -20,7 +20,7 @@ from app import config
 from app.models import now_iso
 
 # === Schema 版本 ===
-SCHEMA_VERSION: int = 1
+SCHEMA_VERSION: int = 2
 
 # === 建表 SQL（与设计文档 4.1 节完全一致）===
 CREATE_TASKS_SQL = """
@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS task_items (
     retry_count     INTEGER DEFAULT 0,
     fail_reason     TEXT,
     local_path      TEXT,
+    selected_image_indices TEXT DEFAULT '',
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
 )
@@ -133,6 +134,26 @@ _ALL_CREATE_TABLE_SQL: list[str] = [
 MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {}
 
 
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    """检查表中是否存在指定列（幂等迁移辅助）。"""
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(row["name"] == column for row in rows)
+
+
+def _migrate_v1_to_v2(conn: sqlite3.Connection) -> None:
+    """v1 → v2：task_items 表新增 selected_image_indices 列。
+
+    v0.1.7 图文类型下载流程引入图片级勾选，JSON 数组如 "[0,1,3]"
+    记录勾选的图片索引；空字符串表示全选。幂等：列已存在时跳过。
+    """
+    if _column_exists(conn, "task_items", "selected_image_indices"):
+        return
+    conn.execute("ALTER TABLE task_items ADD COLUMN selected_image_indices TEXT DEFAULT ''")
+
+
+MIGRATIONS[2] = _migrate_v1_to_v2
+
+
 def get_connection(db_path: Path | str | None = None) -> sqlite3.Connection:
     """获取 SQLite 连接。
 
@@ -183,11 +204,10 @@ def init_db(conn: sqlite3.Connection) -> None:
                 (key, value),
             )
 
-        # 4. 记录 schema 版本（首次初始化时插入，已存在则跳过）
-        existing = conn.execute(
-            "SELECT version FROM schema_version WHERE version = ?", (SCHEMA_VERSION,)
-        ).fetchone()
-        if existing is None:
+        # 4. 记录 schema 版本（仅在 schema_version 表完全空时插入初始版本；
+        #    旧库升级时跳过此步，由 migrate() 通过迁移函数追加新版本记录）
+        existing = conn.execute("SELECT COUNT(*) AS cnt FROM schema_version").fetchone()
+        if existing is None or existing["cnt"] == 0:
             conn.execute(
                 "INSERT INTO schema_version(version, applied_at) VALUES(?, ?)",
                 (SCHEMA_VERSION, now_iso()),
@@ -200,8 +220,10 @@ def migrate(conn: sqlite3.Connection) -> None:
     读取 schema_version 表当前版本，若当前版本 < SCHEMA_VERSION，
     依次执行迁移函数。每个迁移函数负责版本 N-1 → N 的 DDL，执行后更新 schema_version。
 
-    本里程碑只有 v1，无实际迁移逻辑，但预留框架。
-    后续里程碑若改表结构，只需新增迁移函数，不改 init_db。
+    当前已有迁移：
+    - v1 → v2：task_items 表新增 selected_image_indices 列（v0.1.7 图文勾选）
+
+    后续里程碑若改表结构，只需新增迁移函数并提升 SCHEMA_VERSION，不改 init_db。
 
     Args:
         conn: sqlite3.Connection 连接实例

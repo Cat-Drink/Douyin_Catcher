@@ -9,6 +9,7 @@ import sqlite3
 from pathlib import Path
 
 from app import config, database
+from app.database import SCHEMA_VERSION
 from app.models import Metadata, Task, TaskItem
 
 
@@ -129,12 +130,13 @@ class TestInitDb:
         assert metadata_repo.get(metadata_id) is None
 
     def test_schema_version_recorded(self, memory_db: sqlite3.Connection) -> None:
-        """schema_version 表应含版本 1 记录。"""
+        """schema_version 表应含当前 SCHEMA_VERSION 记录（v0.1.7：版本=2）。"""
         row = memory_db.execute(
-            "SELECT version FROM schema_version WHERE version = ?", (1,)
+            "SELECT version FROM schema_version WHERE version = ?",
+            (SCHEMA_VERSION,),
         ).fetchone()
         assert row is not None
-        assert row["version"] == 1
+        assert row["version"] == SCHEMA_VERSION
 
     def test_get_memory_connection(self) -> None:
         """get_memory_connection 返回的连接可直接查询。"""
@@ -223,8 +225,11 @@ class TestInitDefaultDb:
             # 验证连接可用
             rows = conn.execute("SELECT COUNT(*) AS cnt FROM config").fetchone()
             assert rows["cnt"] == 6
-            # 验证 schema_version
-            row = conn.execute("SELECT version FROM schema_version WHERE version = 1").fetchone()
+            # 验证 schema_version 含当前版本记录（v0.1.7：版本=2）
+            row = conn.execute(
+                "SELECT version FROM schema_version WHERE version = ?",
+                (SCHEMA_VERSION,),
+            ).fetchone()
             assert row is not None
         finally:
             conn.close()
