@@ -20,7 +20,7 @@
 ; ==============================================================================
 
 #define MyAppName "抖音抓取器"
-#define MyAppVersion "0.1.1"
+#define MyAppVersion "0.1.9"
 #define MyAppPublisher "DouyinCatcher Contributors"
 #define MyAppExeName "DouyinCatcher.exe"
 #define MyAppURL "https://github.com/Evil0ctal/Douyin_TikTok_Download_API"
