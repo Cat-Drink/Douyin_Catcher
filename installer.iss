@@ -20,7 +20,11 @@
 ; ==============================================================================
 
 #define MyAppName "抖音抓取器"
-#define MyAppVersion "0.2.0"
+; v0.2.1：ISPP 守卫支持 CI 注入版本号
+; 本地编译用默认值 0.2.0；CI 用 ISCC /DMyAppVersion=<tag版本> 覆盖
+#ifndef MyAppVersion
+  #define MyAppVersion "0.2.0"
+#endif
 #define MyAppPublisher "DouyinCatcher Contributors"
 #define MyAppExeName "DouyinCatcher.exe"
 #define MyAppURL "https://github.com/Evil0ctal/Douyin_TikTok_Download_API"
@@ -46,7 +50,7 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 
 ; 输出配置
 OutputDir=dist
-OutputBaseFilename=DouyinCatcher_Setup_v0.2.0
+OutputBaseFilename=DouyinCatcher_Setup_v{#MyAppVersion}
 
 ; 安装向导图标
 SetupIconFile=assets\icon.ico

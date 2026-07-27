@@ -6,6 +6,7 @@ __pycache__/
 .pytest_cache/
 .coverage
 .coverage.*
+coverage.xml
 htmlcov/
 *.egg-info/
 .black_cache/
@@ -31,6 +32,8 @@ build/
 # IDE
 .vscode/
 .idea/
+.zcode/
+.trae/
 
 # OS
 Thumbs.db

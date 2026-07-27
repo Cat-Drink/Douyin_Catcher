@@ -1,0 +1,65 @@
+# CI：代码质量与单元测试
+#
+# 触发：push 到 master / PR 到 master
+# 内容：ruff 检查 + black 格式校验 + 单元测试（排除 e2e）+ 覆盖率上传 Codecov
+#
+# 设计要点：
+#   - Python 3.11 单版本（pyproject.toml requires-python >=3.11）
+#   - 用 -o addopts="" 清空 pyproject.toml 的 addopts，避免 e2e marker 冲突，
+#     覆盖率由命令行显式传参
+#   - 排除 tests/test_e2e（需真实 Cookie + 抖音网络访问，仅本地手动运行）
+#   - Codecov tokenless 上传（公开仓库，无需配 secret）
+
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+# 同分支并发推送时取消旧的任务，节省 CI 资源
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Ruff 检查
+        run: ruff check .
+
+      - name: Black 格式校验
+        run: black --check .
+
+      - name: 单元测试（排除 e2e）
+        # -o addopts="" 清空 pyproject.toml 的 addopts（含 --cov-fail-under=80），
+        # 覆盖率参数由命令行显式传入；排除需真实 Cookie 的 e2e 测试
+        run: |
+          pytest tests/ --ignore=tests/test_e2e \
+            -o addopts="" \
+            --cov=. --cov-report=xml --cov-report=term-missing
+
+      - name: 上传覆盖率到 Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false

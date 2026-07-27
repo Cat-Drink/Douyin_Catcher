@@ -1,0 +1,94 @@
+# Release：打 tag 自动打包并发布
+#
+# 触发：push tag vX.Y.Z
+# 流程：PyInstaller 打包 -> Inno Setup 出安装包 -> 上传 GitHub Release
+#
+# 设计要点：
+#   - 仅 tag 触发，push 到 master 不打包
+#   - Windows runner（PySide6 GUI 应用 + Inno Setup 仅 Windows）
+#   - 从 tag 名解析版本号，用 ISCC /DMyAppVersion=<版本> 注入 installer.iss
+#     （installer.iss 用 ISPP #ifndef 守卫，本地编译仍用默认值）
+#   - AppId 固定 GUID，CI 不得改动（影响升级识别）
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-release:
+    name: Build & Release
+    runs-on: windows-latest
+    permissions:
+      contents: write  # 创建 Release 需要
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: 安装依赖与 PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: 解析 tag 版本号
+        # v0.2.1 -> 0.2.1（去掉 v 前缀）
+        id: version
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "解析到版本号: $VERSION"
+
+      - name: PyInstaller 打包
+        run: pyinstaller DouyinCatcher.spec --noconfirm
+
+      - name: 校验打包产物
+        shell: bash
+        run: |
+          echo "校验打包产物关键文件..."
+          test -f dist/DouyinCatcher/DouyinCatcher.exe || { echo "缺失 DouyinCatcher.exe"; exit 1; }
+          test -f dist/DouyinCatcher/_internal/ui/assets/style.qss || { echo "缺失 style.qss"; exit 1; }
+          test -d dist/DouyinCatcher/_internal/ui/assets/cookie_tutorial || { echo "缺失 cookie_tutorial"; exit 1; }
+          test -f dist/DouyinCatcher/_internal/assets/icon.ico || { echo "缺失 icon.ico"; exit 1; }
+          echo "打包产物校验通过"
+
+      - name: 安装 Inno Setup 6
+        # innosetup 含中文语言包；若 choco 版本不含 ChineseSimplified.isl，
+        # CI 会失败，届时改用手动下载方案
+        run: choco install innosetup -y --no-progress
+
+      - name: Inno Setup 编译安装包
+        # /DMyAppVersion=<版本> 注入版本号（覆盖 installer.iss 的 ISPP 默认值）
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $iscc = Get-ChildItem "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue
+          if (-not $iscc) { $iscc = Get-ChildItem "C:\Program Files\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue }
+          & $iscc.FullName "/DMyAppVersion=$env:APP_VERSION" installer.iss
+
+      - name: 校验安装包产物
+        shell: bash
+        run: |
+          SETUP="dist/DouyinCatcher_Setup_v${{ steps.version.outputs.version }}.exe"
+          test -f "$SETUP" || { echo "缺失安装包: $SETUP"; exit 1; }
+          echo "安装包校验通过: $SETUP"
+
+      - name: 创建 GitHub Release 并上传安装包
+        uses: softprops/action-gh-release@v2
+        with:
+          name: v${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          files: dist/DouyinCatcher_Setup_v${{ steps.version.outputs.version }}.exe
+          generate_release_notes: true
