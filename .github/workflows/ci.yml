@@ -5,10 +5,16 @@
 #
 # 设计要点：
 #   - Python 3.11 单版本（pyproject.toml requires-python >=3.11）
+#   - windows-latest runner（PySide6 桌面 GUI 应用，Windows 原生支持 Qt 测试）
 #   - 用 -o addopts="" 清空 pyproject.toml 的 addopts，避免 e2e marker 冲突，
 #     覆盖率由命令行显式传参
 #   - 排除 tests/test_e2e（需真实 Cookie + 抖音网络访问，仅本地手动运行）
 #   - Codecov tokenless 上传（公开仓库，无需配 secret）
+#
+# 历史：
+#   v0.2.1：首次尝试 ubuntu-latest，但 PySide6 在 Linux 无头环境需要
+#   libEGL/libGL/xvfb 等系统依赖，经 3 轮修复仍不稳定，最终切换至 windows-latest。
+#   Windows runner 与开发环境一致，Qt 测试开箱即用。
 
 name: CI
 
@@ -23,10 +29,15 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  QT_QPA_PLATFORM: windows
+  PYTHONFAULTHANDLER: 1
+  QT_QUICK_BACKEND: software
+
 jobs:
   lint-test:
     name: Lint & Test
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
       - name: 检出代码
@@ -38,14 +49,6 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: requirements-dev.txt
-
-      - name: 安装 Qt 系统依赖与 Xvfb（Linux）
-        # PySide6 QtGui 依赖 libEGL.so.1、libGL.so.1 等 OpenGL 系统库，
-        # ubuntu-latest 默认未预装，缺库会导致 pytest-qt 在 pytest_configure 阶段崩溃
-        # xvfb 提供虚拟 X 显示服务，Qt 无头环境运行必须（否则 qapp fixture 触发 SIGABRT）
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libegl1 libgl1 libglib2.0-0 xvfb
 
       - name: 安装 Python 依赖
         run: |
@@ -61,9 +64,9 @@ jobs:
       - name: 单元测试（排除 e2e）
         # -o addopts="" 清空 pyproject.toml 的 addopts（含 --cov-fail-under=80），
         # 覆盖率参数由命令行显式传入；排除需真实 Cookie 的 e2e 测试
-        # xvfb-run 提供虚拟 X 显示服务，避免 QApplication 因无 DISPLAY 而 SIGABRT
+        shell: bash
         run: |
-          xvfb-run pytest tests/ --ignore=tests/test_e2e \
+          pytest tests/ --ignore=tests/test_e2e \
             -o addopts="" \
             --cov=. --cov-report=xml --cov-report=term-missing
 
