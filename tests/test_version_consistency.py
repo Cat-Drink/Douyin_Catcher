@@ -25,11 +25,11 @@ _PYPROJECT_PATH = _PROJECT_ROOT / "pyproject.toml"
 _INSTALLER_PATH = _PROJECT_ROOT / "installer.iss"
 
 # installer.iss 中 #define MyAppVersion "x.y.z" 的捕获正则
-_INSTALLER_DEFINE_RE = re.compile(r'^#define\s+MyAppVersion\s+"([^"]+)"', re.MULTILINE)
+# v0.2.1：支持 ISPP 守卫块内的缩进 #define（如 "  #define MyAppVersion ..."）
+_INSTALLER_DEFINE_RE = re.compile(r'^\s*#define\s+MyAppVersion\s+"([^"]+)"', re.MULTILINE)
 # installer.iss 中 OutputBaseFilename=DouyinCatcher_Setup_v<version> 的捕获正则
-_INSTALLER_OUTPUT_RE = re.compile(
-    r"^OutputBaseFilename=DouyinCatcher_Setup_v([^\s]+)", re.MULTILINE
-)
+# v0.2.1：支持 ISPP 变量引用 {#MyAppVersion}（CI 注入）与直接版本号（回退兼容）两种形态
+_INSTALLER_OUTPUT_RE = re.compile(r"^OutputBaseFilename=DouyinCatcher_Setup_v(\S+)", re.MULTILINE)
 
 
 def _read_pyproject_version() -> str:
@@ -48,11 +48,20 @@ def _read_installer_define_version() -> str:
 
 
 def _read_installer_output_version() -> str:
-    """从 installer.iss 读取 OutputBaseFilename 中的版本号。"""
+    """从 installer.iss 读取 OutputBaseFilename 中的版本号。
+
+    v0.2.1：OutputBaseFilename 现使用 ISPP 变量引用 ``{#MyAppVersion}``，
+    本函数将其解析为 ``#define MyAppVersion`` 的实际值，保持与历史一致的
+    纯版本号返回（如 ``0.2.0``），供一致性断言使用。
+    """
     text = _INSTALLER_PATH.read_text(encoding="utf-8")
     match = _INSTALLER_OUTPUT_RE.search(text)
     assert match is not None, "installer.iss 缺少 OutputBaseFilename 行"
-    return match.group(1)
+    raw = match.group(1)
+    # ISPP 变量引用 {#MyAppVersion} -> 解析为 #define MyAppVersion 的值
+    if raw.startswith("{#") and raw.endswith("}"):
+        return _read_installer_define_version()
+    return raw
 
 
 class TestVersionConsistency:
