@@ -13,13 +13,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 # === 枚举类型 ===
-# 继承 str, Enum，便于直接序列化为 SQLite TEXT
+# 继承 StrEnum（Python 3.11+），便于直接序列化为 SQLite TEXT
+# v0.2.1：由 (str, Enum) 迁移至 StrEnum，修复 ruff UP042 并恢复 3.11 前格式化行为
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     """任务状态。"""
 
     PENDING = "pending"
@@ -29,7 +30,7 @@ class TaskStatus(str, Enum):
     FAILED = "failed"
 
 
-class TaskItemStatus(str, Enum):
+class TaskItemStatus(StrEnum):
     """任务项状态（与 TaskStatus 一致）。"""
 
     PENDING = "pending"
@@ -39,7 +40,7 @@ class TaskItemStatus(str, Enum):
     FAILED = "failed"
 
 
-class SourceType(str, Enum):
+class SourceType(StrEnum):
     """任务来源类型。"""
 
     SINGLE = "single"  # 单链接
@@ -48,7 +49,7 @@ class SourceType(str, Enum):
     FILE_IMPORT = "file_import"  # 文件导入
 
 
-class VideoType(str, Enum):
+class VideoType(StrEnum):
     """视频类型。"""
 
     VIDEO = "video"  # 普通短视频
@@ -56,7 +57,7 @@ class VideoType(str, Enum):
     LONG_VIDEO = "long_video"  # 长视频
 
 
-class CookieStatus(str, Enum):
+class CookieStatus(StrEnum):
     """Cookie 状态。"""
 
     VALID = "valid"  # 有效
