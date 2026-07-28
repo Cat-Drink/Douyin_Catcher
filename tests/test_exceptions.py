@@ -11,7 +11,6 @@ import pytest
 from crawlers.exceptions import (
     CookieInvalidError,
     CrawlerError,
-    XieFengShiYingError,
     InvalidURLFormatError,
     NetworkError,
     RateLimitedError,
@@ -19,6 +18,7 @@ from crawlers.exceptions import (
     UserNotFoundError,
     VerifyRequiredError,
     VideoNotFoundError,
+    XieFengShiYingError,
 )
 
 
