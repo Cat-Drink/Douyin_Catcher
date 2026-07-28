@@ -39,6 +39,9 @@ build/
 Thumbs.db
 .DS_Store
 
+# VM 镜像（避免大文件误提交）
+VMs/
+
 # 运行时数据（开发期本地测试产生）
 *.db
 *.db-wal
