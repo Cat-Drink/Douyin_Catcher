@@ -23,7 +23,7 @@
 ; v0.2.1：ISPP 守卫支持 CI 注入版本号
 ; 本地编译用默认值 0.2.0；CI 用 ISCC /DMyAppVersion=<tag版本> 覆盖
 #ifndef MyAppVersion
-  #define MyAppVersion "0.2.0"
+  #define MyAppVersion "0.2.2"
 #endif
 #define MyAppPublisher "DouyinCatcher Contributors"
 #define MyAppExeName "DouyinCatcher.exe"
@@ -45,8 +45,9 @@ AppId={{B8F3A2E1-7C4D-4E9F-A1B6-3D5E8F2C7A90}
 DefaultDirName={autopf}\DouyinCatcher
 DefaultGroupName={#MyAppName}
 
-; 卸载图标
+; 卸载图标与显示名称
 UninstallDisplayIcon={app}\{#MyAppExeName}
+UninstallDisplayName={#MyAppName} {#MyAppVersion}
 
 ; 输出配置
 OutputDir=dist
@@ -74,7 +75,7 @@ DisableProgramGroupPage=yes
 
 [Languages]
 ; 简体中文（默认）
-Name: "chinesesimp"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+Name: "english"; MessagesFile: "compiler:Default.isl"
 ; 英文（备选）
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
