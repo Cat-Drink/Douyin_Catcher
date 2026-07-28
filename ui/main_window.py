@@ -58,7 +58,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 # 窗口属性常量（规范 5.1 节）
-APP_NAME = "抖音抓取器"
+APP_NAME = "撷风拾影"
 _APP_VERSION = "0.2.2"  # 版本号单一来源（规范 8.3 节），供 UI 模块引用以避免版本号漂移
 APP_VERSION = f"v{_APP_VERSION}"  # 向后兼容别名，供 main.py 与测试引用
 MIN_WINDOW_SIZE = (800, 600)

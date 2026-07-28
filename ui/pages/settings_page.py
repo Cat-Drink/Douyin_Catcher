@@ -70,15 +70,15 @@ _REPO_URL = "https://github.com/Evil0ctal/Douyin_TikTok_Download_API"
 
 
 def _get_log_path() -> str:
-    """返回日志文件路径（%APPDATA%/DouyinCatcher/logs/app.log）。"""
+    """返回日志文件路径（%APPDATA%/XieFengShiYing/logs/app.log）。"""
     base = os.environ.get("APPDATA", os.path.expanduser("~"))
-    return os.path.join(base, "DouyinCatcher", "logs", "app.log")
+    return os.path.join(base, "XieFengShiYing", "logs", "app.log")
 
 
 def _get_default_download_dir() -> str:
-    """返回默认下载目录（用户下载目录下的 DouyinCatcher）。"""
+    """返回默认下载目录（用户下载目录下的 XieFengShiYing）。"""
     home = os.path.expanduser("~")
-    return os.path.join(home, "Downloads", "DouyinCatcher")
+    return os.path.join(home, "Downloads", "XieFengShiYing")
 
 
 class SettingsPage(QWidget):
@@ -276,7 +276,7 @@ class SettingsPage(QWidget):
         frame, layout = self._create_card("关于")
 
         about_text = (
-            f"抖音抓取器 (Douyin_Catcher)\n"
+            f"撷风拾影 (XieFengShiYing)\n"
             f"版本: v{_APP_VERSION}\n"
             f"设计参考: Evil0ctal/Douyin_TikTok_Download_API"
         )

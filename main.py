@@ -1,4 +1,4 @@
-"""抖音抓取器应用入口。
+"""撷风拾影应用入口。
 
 负责应用启动流程：日志初始化、目录确保、QApplication 创建、QSS 加载、
 数据库初始化、AsyncWorker 与 Bridge 初始化、断点续传恢复、ErrorHandler 初始化、
@@ -61,7 +61,7 @@ from worker.download_bridge import DownloadBridge
 from worker.signals import ControlSignals, WorkerSignals
 
 # 模块级常量
-APP_NAME = "抖音抓取器"
+APP_NAME = "撷风拾影"
 QSS_PATH = Path(__file__).parent / "ui" / "assets" / "style.qss"
 ICON_PATH = Path(__file__).parent / "assets" / "icon.ico"
 

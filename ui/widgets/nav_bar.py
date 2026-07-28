@@ -89,7 +89,7 @@ class NavBar(QWidget):
         layout.setSpacing(0)
 
         # Logo 区
-        logo_label = QLabel("Douyin Catcher")
+        logo_label = QLabel("撷风拾影")
         logo_label.setObjectName("navLogo")
         layout.addWidget(logo_label)
 

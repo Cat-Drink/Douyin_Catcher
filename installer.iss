@@ -1,32 +1,32 @@
 ﻿; ==============================================================================
-; 抖音抓取器 Inno Setup 安装脚本
+; 撷风拾影 Inno Setup 安装脚本
 ;
 ; 严格遵循规范文档 8.2 节与附录 E。
-; 生成 Windows 安装包：dist/DouyinCatcher_Setup_v0.2.0.exe
+; 生成 Windows 安装包：dist/XieFengShiYing_Setup_v0.2.0.exe
 ;
 ; 编译命令::
 ;
 ;     "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" installer.iss
 ;
 ; 前置条件::
-;   - PyInstaller 打包完成，dist/DouyinCatcher/ 目录存在
+;   - PyInstaller 打包完成，dist/XieFengShiYing/ 目录存在
 ;   - Inno Setup 6 已安装（含中文语言包）
 ;   - assets/icon.ico 存在
 ;
 ; 关键设计::
-;   - 卸载只清理 {app}（Program Files），不清理 %APPDATA%/DouyinCatcher/（用户数据保留）
+;   - 卸载只清理 {app}（Program Files），不清理 %APPDATA%/XieFengShiYing/（用户数据保留）
 ;   - AppId 固定 GUID，发布后不可更改（影响升级识别）
 ;   - 仅支持 Windows x64
 ; ==============================================================================
 
-#define MyAppName "抖音抓取器"
+	#define MyAppName "撷风拾影"
 ; v0.2.1：ISPP 守卫支持 CI 注入版本号
 ; 本地编译用默认值 0.2.0；CI 用 ISCC /DMyAppVersion=<tag版本> 覆盖
 #ifndef MyAppVersion
   #define MyAppVersion "0.2.2"
 #endif
-#define MyAppPublisher "DouyinCatcher Contributors"
-#define MyAppExeName "DouyinCatcher.exe"
+#define MyAppPublisher "撷风拾影 Contributors"
+#define MyAppExeName "XieFengShiYing.exe"
 #define MyAppURL "https://github.com/Evil0ctal/Douyin_TikTok_Download_API"
 
 [Setup]
@@ -42,7 +42,7 @@ AppSupportURL={#MyAppURL}
 AppId={{B8F3A2E1-7C4D-4E9F-A1B6-3D5E8F2C7A90}
 
 ; 安装目录与开始菜单
-DefaultDirName={autopf}\DouyinCatcher
+DefaultDirName={autopf}\XieFengShiYing
 DefaultGroupName={#MyAppName}
 
 ; 卸载图标与显示名称
@@ -51,7 +51,7 @@ UninstallDisplayName={#MyAppName} {#MyAppVersion}
 
 ; 输出配置
 OutputDir=dist
-OutputBaseFilename=DouyinCatcher_Setup_v{#MyAppVersion}
+OutputBaseFilename=XieFengShiYing_Setup_v{#MyAppVersion}
 
 ; 安装向导图标
 SetupIconFile=assets\icon.ico
@@ -85,7 +85,7 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 
 [Files]
 ; 打包目录下所有文件（递归）
-Source: "dist\DouyinCatcher\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "dist\XieFengShiYing\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
 ; 开始菜单快捷方式
@@ -100,5 +100,5 @@ Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: 
 Filename: "{app}\{#MyAppExeName}"; Description: "立即启动 {#MyAppName}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-; 卸载时清理安装目录（不清理 %APPDATA%/DouyinCatcher/，用户数据保留）
+; 卸载时清理安装目录（不清理 %APPDATA%/XieFengShiYing/，用户数据保留）
 Type: filesandordirs; Name: "{app}"

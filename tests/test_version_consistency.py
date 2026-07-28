@@ -27,9 +27,9 @@ _INSTALLER_PATH = _PROJECT_ROOT / "installer.iss"
 # installer.iss 中 #define MyAppVersion "x.y.z" 的捕获正则
 # v0.2.1：支持 ISPP 守卫块内的缩进 #define（如 "  #define MyAppVersion ..."）
 _INSTALLER_DEFINE_RE = re.compile(r'^\s*#define\s+MyAppVersion\s+"([^"]+)"', re.MULTILINE)
-# installer.iss 中 OutputBaseFilename=DouyinCatcher_Setup_v<version> 的捕获正则
+# installer.iss 中 OutputBaseFilename=XieFengShiYing_Setup_v<version> 的捕获正则
 # v0.2.1：支持 ISPP 变量引用 {#MyAppVersion}（CI 注入）与直接版本号（回退兼容）两种形态
-_INSTALLER_OUTPUT_RE = re.compile(r"^OutputBaseFilename=DouyinCatcher_Setup_v(\S+)", re.MULTILINE)
+_INSTALLER_OUTPUT_RE = re.compile(r"^OutputBaseFilename=XieFengShiYing_Setup_v(\S+)", re.MULTILINE)
 
 
 def _read_pyproject_version() -> str:

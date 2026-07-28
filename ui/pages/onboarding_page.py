@@ -423,7 +423,7 @@ class WelcomeStep(QWidget):
         layout.addWidget(logo_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
         # 应用名称
-        title_label = QLabel("欢迎使用抖音抓取器")
+        title_label = QLabel("欢迎使用撷风拾影")
         title_label.setStyleSheet("font-size: 24px; font-weight: 600;")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title_label)
@@ -452,7 +452,7 @@ class WelcomeStep(QWidget):
 class DirectoryStep(QWidget):
     """下载目录设置页步骤（步骤 1）。
 
-    引导用户选择下载文件保存位置，默认 ``%USERPROFILE%/Downloads/DouyinCatcher``，
+    引导用户选择下载文件保存位置，默认 ``%USERPROFILE%/Downloads/XieFengShiYing``，
     可修改，并校验目录可读性。
 
     信号:
@@ -511,7 +511,7 @@ class DirectoryStep(QWidget):
         layout.addLayout(dir_row)
 
         # 提示信息
-        hint = QLabel("默认目录为系统下载文件夹下的 DouyinCatcher 子文件夹，" "可随时在设置中修改")
+        hint = QLabel("默认目录为系统下载文件夹下的 XieFengShiYing 子文件夹，" "可随时在设置中修改")
         hint.setStyleSheet("font-size: 12px; color: #3B82F6;")
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -568,7 +568,7 @@ class DirectoryStep(QWidget):
             return False, "目录无法创建，请选择其他位置"
         # 写入权限检查
         try:
-            test_file = Path(path) / ".douyin_catcher_test"
+            test_file = Path(path) / ".xiefeng_shiying_test"
             test_file.write_text("test", encoding="utf-8")
             test_file.unlink()
         except OSError:

@@ -11,7 +11,7 @@ import pytest
 from crawlers.exceptions import (
     CookieInvalidError,
     CrawlerError,
-    DouyinCatcherError,
+    XieFengShiYingError,
     InvalidURLFormatError,
     NetworkError,
     RateLimitedError,
@@ -57,12 +57,12 @@ class TestExceptionHierarchy:
         ],
     )
     def test_all_extend_douyin_catcher_error(self, exc_cls: type) -> None:
-        """所有自定义异常均继承自 DouyinCatcherError，便于顶层统一兜底。"""
-        assert issubclass(exc_cls, DouyinCatcherError)
+        """所有自定义异常均继承自 XieFengShiYingError，便于顶层统一兜底。"""
+        assert issubclass(exc_cls, XieFengShiYingError)
 
     def test_crawler_error_extends_douyin_catcher_error(self) -> None:
-        """CrawlerError 是 DouyinCatcherError 的直接子类。"""
-        assert issubclass(CrawlerError, DouyinCatcherError)
+        """CrawlerError 是 XieFengShiYingError 的直接子类。"""
+        assert issubclass(CrawlerError, XieFengShiYingError)
 
 
 class TestExceptionInstantiation:
@@ -107,6 +107,6 @@ class TestExceptionInstantiation:
             raise InvalidURLFormatError("无法识别")
 
     def test_raise_and_catch_as_douyin_catcher_error(self) -> None:
-        """子类异常可被 ``except DouyinCatcherError`` 顶层捕获。"""
-        with pytest.raises(DouyinCatcherError):
+        """子类异常可被 ``except XieFengShiYingError`` 顶层捕获。"""
+        with pytest.raises(XieFengShiYingError):
             raise VerifyRequiredError("需要验证")

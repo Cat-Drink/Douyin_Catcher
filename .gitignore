@@ -27,7 +27,7 @@ _compare_xbogus.py
 dist/
 build/
 *.spec
-!DouyinCatcher.spec
+!XieFengShiYing.spec
 
 # IDE
 .vscode/

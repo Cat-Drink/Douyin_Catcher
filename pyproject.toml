@@ -1,8 +1,8 @@
 [project]
-name = "douyin-catcher"
+name = "xiefeng-shiying"
 version = "0.2.2"
 description = "抖音短视频（含图文、长视频）数据抓取的 Windows 桌面端应用"
-authors = [{ name = "DouyinCatcher Contributors" }]
+authors = [{ name = "撷风拾影 Contributors" }]
 license = { text = "MIT" }
 requires-python = ">=3.11"
 readme = "README.md"

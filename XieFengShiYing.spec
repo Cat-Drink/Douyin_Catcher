@@ -2,18 +2,18 @@
 """PyInstaller 打包配置文件。
 
 严格遵循设计文档 8.4 节与规范文档 8.1 节。
-使用 --onedir 模式（启动快于 onefile），产物为 dist/DouyinCatcher/ 目录。
+使用 --onedir 模式（启动快于 onefile），产物为 dist/XieFengShiYing/ 目录。
 
 打包命令::
 
-    pyinstaller DouyinCatcher.spec --noconfirm
+    pyinstaller XieFengShiYing.spec --noconfirm
 
 产物验证::
 
-    dist/DouyinCatcher/DouyinCatcher.exe
-    dist/DouyinCatcher/_internal/ui/assets/style.qss
-    dist/DouyinCatcher/_internal/ui/assets/cookie_tutorial/
-    dist/DouyinCatcher/_internal/assets/icon.ico
+    dist/XieFengShiYing/XieFengShiYing.exe
+    dist/XieFengShiYing/_internal/ui/assets/style.qss
+    dist/XieFengShiYing/_internal/ui/assets/cookie_tutorial/
+    dist/XieFengShiYing/_internal/assets/icon.ico
 """
 
 from pathlib import Path
@@ -83,7 +83,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="DouyinCatcher",
+    name="XieFengShiYing",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -100,5 +100,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="DouyinCatcher",
+    name="XieFengShiYing",
 )
