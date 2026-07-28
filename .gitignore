@@ -47,3 +47,6 @@ VMs/
 *.db-wal
 *.db-shm
 logs/
+
+# 会话快照（ZCode 环境初始化产物）
+launch_snapshot.txt
