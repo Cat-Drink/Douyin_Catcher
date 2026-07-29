@@ -241,20 +241,3 @@ def sample_cookies(memory_db: sqlite3.Connection, cookie_repo: CookieRepository)
         cookie_id = cookie_repo.add(cookie)
         inserted.append(cookie_repo.get_by_id(cookie_id))  # type: ignore[arg-type]
     return inserted
-
-
-# ---- worker 层测试 fixtures ----
-
-
-@pytest.fixture
-def async_worker(qapp):
-    """创建 AsyncWorker 实例，start() 启动，yield 后 stop() 关闭。
-
-    用于需要真实 asyncio loop 的测试。qapp 确保 Qt 事件循环可用。
-    """
-    from worker.async_worker import AsyncWorker
-
-    worker = AsyncWorker()
-    worker.start()
-    yield worker
-    worker.stop()

@@ -1,10 +1,77 @@
-import { useState } from "react";
-import { FolderOpen, Download } from "lucide-react";
+import { useState, useEffect } from "react";
+import { FolderOpen, Download, Loader2 } from "lucide-react";
 import { Button } from "../components/ui/button";
-import { mockConfig } from "../data/mock";
+import { useToastStore } from "../store/toastStore";
+import { pickDirectory, openExternal } from "../lib/tauri";
+import * as api from "../lib/api";
 
 export default function SettingsPage() {
-  const [config] = useState(mockConfig);
+  const [config, setConfig] = useState<api.ConfigResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [concurrency, setConcurrency] = useState(3);
+  const { addToast } = useToastStore();
+
+  const loadConfig = async () => {
+    setLoading(true);
+    try {
+      const cfg = await api.fetchConfig();
+      setConfig(cfg);
+      setConcurrency(cfg.concurrency);
+    } catch (e) {
+      addToast("加载配置失败", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadConfig();
+  }, []);
+
+  const handleSaveConcurrency = async () => {
+    if (!config) return;
+    setSaving(true);
+    try {
+      await api.updateConfig({ concurrency } as any);
+      setConfig({ ...config, concurrency });
+      addToast("并发数已更新", "success");
+    } catch (e) {
+      addToast("保存失败", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handlePickDirectory = async () => {
+    const dir = await pickDirectory();
+    if (dir && config) {
+      try {
+        await api.updateConfig({ download_dir: dir } as any);
+        setConfig({ ...config, download_dir: dir });
+        addToast("下载目录已更新", "success");
+      } catch {
+        addToast("保存目录失败", "error");
+      }
+    }
+  };
+
+  const handleOpenRepo = () => {
+    openExternal("https://github.com/Evil0ctal/Douyin_TikTok_Download_API");
+  };
+
+  if (loading) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center px-6 h-14 border-b border-border-light">
+          <h1 className="text-display font-semibold text-text-primary">设置</h1>
+        </div>
+        <div className="flex-1 flex items-center justify-center text-text-disabled">
+          <Loader2 size={32} className="animate-spin" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -21,8 +88,8 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between h-12">
                 <span className="text-sm text-text-primary">下载目录</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-text-secondary max-w-60 truncate">{config.downloadDir}</span>
-                  <Button variant="secondary" size="sm">
+                  <span className="text-xs text-text-secondary max-w-60 truncate">{config?.download_dir || "未设置"}</span>
+                  <Button variant="secondary" size="sm" onClick={handlePickDirectory}>
                     <FolderOpen size={14} className="mr-1" /> 浏览...
                   </Button>
                 </div>
@@ -32,20 +99,32 @@ export default function SettingsPage() {
                 <span className="text-sm text-text-primary">并发下载数</span>
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-text-secondary">1</span>
-                  <div className="w-40 h-2 bg-border-light rounded-full relative">
-                    <div
-                      className="h-full bg-purple-500 rounded-full"
-                      style={{ width: `${((config.concurrency - 1) / 9) * 100}%` }}
-                    />
-                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={10}
+                    value={concurrency}
+                    onChange={(e) => setConcurrency(Number(e.target.value))}
+                    className="w-40 h-2 accent-purple-500 cursor-pointer"
+                  />
                   <span className="text-xs text-text-secondary">10</span>
-                  <span className="text-sm font-semibold text-purple-500 w-4 text-center">{config.concurrency}</span>
+                  <span className="text-sm font-semibold text-purple-500 w-4 text-center">{concurrency}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleSaveConcurrency}
+                    disabled={saving || concurrency === config?.concurrency}
+                  >
+                    {saving ? <Loader2 size={14} className="animate-spin" /> : "保存"}
+                  </Button>
                 </div>
               </div>
               <div className="border-t border-border-light" />
               <div className="flex items-center justify-between h-12">
                 <span className="text-sm text-text-primary">单文件分块大小</span>
-                <span className="text-sm text-text-secondary">{config.chunkSize} MB</span>
+                <span className="text-sm text-text-secondary">
+                  {config?.chunk_size ? `${(config.chunk_size / (1024 * 1024)).toFixed(0)} MB` : "1 MB"}
+                </span>
               </div>
               <div className="border-t border-border-light" />
               <div className="flex items-center justify-between h-12">
@@ -63,11 +142,16 @@ export default function SettingsPage() {
             <div className="flex items-center gap-6">
               <span className="text-sm text-text-primary">元数据保存格式</span>
               <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="checkbox" className="w-4 h-4 accent-purple-500" defaultChecked />
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 accent-purple-500"
+                  checked={config?.metadata_format === "json"}
+                  readOnly
+                />
                 JSON
               </label>
               <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="checkbox" className="w-4 h-4 accent-purple-500" />
+                <input type="checkbox" className="w-4 h-4 accent-purple-500" disabled />
                 CSV
               </label>
             </div>
@@ -81,9 +165,9 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-sm text-text-primary">日志位置</span>
-                <p className="text-xs text-text-disabled mt-0.5">%APPDATA%\DouyinCatcher\logs\app.log</p>
+                <p className="text-xs text-text-disabled mt-0.5">%APPDATA%\XieFengShiYing\logs\app.log</p>
               </div>
-              <Button variant="secondary" size="sm">
+              <Button variant="secondary" size="sm" disabled>
                 <Download size={14} className="mr-1" /> 导出日志
               </Button>
             </div>
@@ -97,11 +181,11 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-text-primary">撷风拾影 (XieFengShiYing)</p>
-                <p className="text-xs text-text-secondary mt-0.5">版本: v0.2.3</p>
+                <p className="text-xs text-text-secondary mt-0.5">版本: v0.2.9</p>
               </div>
               <div className="flex gap-2">
                 <Button variant="secondary" size="sm" disabled>检查更新</Button>
-                <Button variant="secondary" size="sm">开源仓库</Button>
+                <Button variant="secondary" size="sm" onClick={handleOpenRepo}>开源仓库</Button>
               </div>
             </div>
           </div>

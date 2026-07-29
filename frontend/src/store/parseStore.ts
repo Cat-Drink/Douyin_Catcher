@@ -1,0 +1,143 @@
+/** 解析与抓取状态管理 - Zustand Store */
+
+import { create } from "zustand";
+import * as api from "../lib/api";
+
+/** 前端展示用的解析结果项 */
+export interface ParsedResult {
+  index: number;
+  url: string;
+  title: string;
+  author: string;
+  type: "video" | "image_set" | "long_video" | "user_home";
+  awemeId?: string;
+  coverUrl?: string;
+  duration?: string;
+  imageCount?: number;
+  error?: string;
+}
+
+interface ParseStore {
+  // 批量解析
+  batchResults: ParsedResult[];
+  batchLoading: boolean;
+  batchError: string | null;
+
+  // 主页抓取
+  profileResults: ParsedResult[];
+  profileLoading: boolean;
+  profileError: string | null;
+
+  /** 批量解析链接 */
+  parseUrls: (urls: string[]) => Promise<void>;
+  /** 清空批量解析结果 */
+  clearBatch: () => void;
+
+  /** 主页抓取 */
+  fetchHome: (url: string, maxItems?: number) => Promise<void>;
+  /** 清空主页抓取结果 */
+  clearProfile: () => void;
+
+  /** 将勾选结果入队下载 */
+  downloadSelected: (items: ParsedResult[], downloadDir?: string) => Promise<void>;
+}
+
+export const useParseStore = create<ParseStore>((set) => ({
+  batchResults: [],
+  batchLoading: false,
+  batchError: null,
+
+  profileResults: [],
+  profileLoading: false,
+  profileError: null,
+
+  parseUrls: async (urls: string[]) => {
+    set({ batchLoading: true, batchError: null, batchResults: [] });
+    try {
+      const rawResults = await api.parseUrls(urls);
+      const results: ParsedResult[] = rawResults.map((r: any, i: number) => ({
+        index: i,
+        url: urls[i] || r.url || "",
+        title: r.title || "",
+        author: r.author || "",
+        type: (r.type as ParsedResult["type"]) || "video",
+        awemeId: r.aweme_id,
+        coverUrl: r.cover_url,
+        duration: r.duration,
+        imageCount: r.image_count,
+        error: r.error || undefined,
+      }));
+      set({ batchResults: results, batchLoading: false });
+    } catch (e) {
+      set({
+        batchError: e instanceof Error ? e.message : "解析失败",
+        batchLoading: false,
+      });
+    }
+  },
+
+  clearBatch: () => {
+    set({ batchResults: [], batchError: null });
+  },
+
+  fetchHome: async (url: string, maxItems = 50) => {
+    set({ profileLoading: true, profileError: null, profileResults: [] });
+    try {
+      const result = await api.fetchHome(url, maxItems);
+      const results: ParsedResult[] = (result.items || []).map((r: any, i: number) => ({
+        index: i,
+        url: r.url || "",
+        title: r.title || "",
+        author: r.author || "",
+        type: (r.type as ParsedResult["type"]) || "video",
+        awemeId: r.aweme_id,
+        coverUrl: r.cover_url,
+        duration: r.duration,
+        imageCount: r.image_count,
+      }));
+      set({ profileResults: results, profileLoading: false });
+    } catch (e) {
+      set({
+        profileError: e instanceof Error ? e.message : "抓取失败",
+        profileLoading: false,
+      });
+    }
+  },
+
+  clearProfile: () => {
+    set({ profileResults: [], profileError: null });
+  },
+
+  downloadSelected: async (items: ParsedResult[], downloadDir?: string) => {
+    const downloadItems = items
+      .filter((item) => item.type !== "user_home" && !item.error)
+      .map((item) => ({
+        url: item.url,
+        title: item.title,
+        author: item.author,
+        type: item.type === "long_video" ? "long_video" : item.type === "image_set" ? "image_set" : "video",
+        aweme_id: item.awemeId,
+        cover_url: item.coverUrl,
+        image_count: item.imageCount,
+      }));
+
+    if (downloadItems.length === 0) return;
+
+    await api.startDownload({
+      source_type: "batch",
+      items: downloadItems,
+      download_dir: downloadDir,
+    });
+  },
+}));
+
+/** 从文本中提取抖音链接 */
+export function extractLinks(text: string): string[] {
+  const urlPattern = /https?:\/\/[^\s，。、！？,;；)）\]]+/g;
+  const matches = text.match(urlPattern);
+  if (!matches) return [];
+  return matches.filter((url) => {
+    const lower = url.toLowerCase();
+    return lower.includes("douyin.com") || lower.includes("iesdouyin.com");
+  });
+}

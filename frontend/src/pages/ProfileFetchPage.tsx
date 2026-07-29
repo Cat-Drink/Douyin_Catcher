@@ -1,26 +1,28 @@
 import { useState } from "react";
+import { Loader2, AlertCircle } from "lucide-react";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
-import { mockParsedResults } from "../data/mock";
+import { useParseStore } from "../store/parseStore";
 
 export default function ProfileFetchPage() {
   const [homeUrl, setHomeUrl] = useState("");
-  const [fetched, setFetched] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [typeFilter, setTypeFilter] = useState("全部");
+  const [maxItems, setMaxItems] = useState(50);
 
-  const results = typeFilter === "全部"
-    ? mockParsedResults
-    : mockParsedResults.filter((r) => {
-        if (typeFilter === "视频") return r.type === "video" || r.type === "long_video";
-        if (typeFilter === "图文") return r.type === "image_set";
-        return true;
-      });
+  const {
+    profileResults: results,
+    profileLoading: loading,
+    profileError: error,
+    fetchHome,
+    downloadSelected,
+  } = useParseStore();
 
   const handleFetch = () => {
-    setFetched(true);
+    if (!homeUrl.trim()) return;
     setSelected(new Set());
+    fetchHome(homeUrl.trim(), maxItems);
   };
 
   const toggleSelect = (index: number) => {
@@ -31,8 +33,27 @@ export default function ProfileFetchPage() {
   };
 
   const toggleAll = () => {
-    if (selected.size === results.length) setSelected(new Set());
-    else setSelected(new Set(results.map((_, i) => i)));
+    if (selected.size === filtered.length) setSelected(new Set());
+    else setSelected(new Set(filtered.map((_, i) => i)));
+  };
+
+  const filtered = results.filter((r) => {
+    if (typeFilter === "全部") return true;
+    if (typeFilter === "视频") return r.type === "video" || r.type === "long_video";
+    if (typeFilter === "长视频") return r.type === "long_video";
+    if (typeFilter === "图文") return r.type === "image_set";
+    return true;
+  });
+
+  const handleDownload = async () => {
+    const items = selected.size === 0 ? [] : filtered.filter((_, i) => selected.has(i));
+    if (items.length === 0) return;
+    try {
+      await downloadSelected(items);
+      setSelected(new Set());
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "下载入队失败");
+    }
   };
 
   return (
@@ -48,15 +69,33 @@ export default function ProfileFetchPage() {
             placeholder="粘贴用户主页链接，例如 https://www.douyin.com/user/xxxxx"
             value={homeUrl}
             onChange={(e) => setHomeUrl(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleFetch()}
           />
-          <Button onClick={handleFetch} disabled={!homeUrl.trim()}>
-            开始抓取
+          <Button onClick={handleFetch} disabled={!homeUrl.trim() || loading}>
+            {loading ? (
+              <>
+                <Loader2 size={16} className="mr-1 animate-spin" />
+                抓取中
+              </>
+            ) : (
+              "开始抓取"
+            )}
           </Button>
         </div>
       </div>
 
+      {/* Error State */}
+      {error && (
+        <div className="mx-6 mb-3 p-3 bg-red-50 border border-red-200 rounded-sm">
+          <div className="flex items-center gap-2 text-sm text-error">
+            <AlertCircle size={16} />
+            <span>{error}</span>
+          </div>
+        </div>
+      )}
+
       {/* Filter bar */}
-      {fetched && (
+      {(results.length > 0 || loading) && (
         <div className="px-6 pb-3">
           <div className="flex items-center gap-3 px-4 py-2 bg-bg-gray rounded-sm text-sm">
             <span className="text-text-secondary text-xs">类型:</span>
@@ -74,7 +113,15 @@ export default function ProfileFetchPage() {
               </button>
             ))}
             <span className="text-text-secondary text-xs ml-4">数量上限:</span>
-            <span className="text-sm font-medium text-text-primary">50</span>
+            <select
+              className="text-sm font-medium text-text-primary bg-transparent border-none outline-none"
+              value={maxItems}
+              onChange={(e) => setMaxItems(Number(e.target.value))}
+            >
+              {[20, 30, 50, 100, 200].map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
           </div>
         </div>
       )}
@@ -82,26 +129,26 @@ export default function ProfileFetchPage() {
       <div className="border-t border-border-light" />
 
       {/* Results */}
-      {fetched && (
+      {results.length > 0 && (
         <div className="flex-1 flex flex-col overflow-hidden">
           <div className="flex items-center justify-between px-6 py-2 border-b border-border-light">
             <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
               <input
                 type="checkbox"
                 className="w-4 h-4 accent-purple-500"
-                checked={selected.size === results.length}
+                checked={filtered.length > 0 && selected.size === filtered.length}
                 onChange={toggleAll}
               />
               全选
             </label>
             <span className="text-xs text-text-secondary">
-              已选 {selected.size} / 共 {results.length} 项
+              已选 {selected.size} / 共 {filtered.length} 项
             </span>
           </div>
           <div className="flex-1 overflow-y-auto">
-            {results.map((item, i) => (
+            {filtered.map((item, i) => (
               <div
-                key={i}
+                key={`${item.awemeId || i}`}
                 className={`flex items-center gap-3 px-6 py-2 border-b border-border-light hover:bg-bg-hover transition-colors cursor-pointer ${selected.has(i) ? "bg-bg-selected" : ""}`}
                 onClick={() => toggleSelect(i)}
               >
@@ -111,12 +158,16 @@ export default function ProfileFetchPage() {
                   checked={selected.has(i)}
                   onChange={() => toggleSelect(i)}
                 />
-                <div className="w-12 h-12 rounded-sm bg-bg-hover flex-shrink-0 flex items-center justify-center text-text-disabled text-xs">
-                  封面
+                <div className="w-12 h-12 rounded-sm bg-bg-hover flex-shrink-0 flex items-center justify-center text-text-disabled text-xs overflow-hidden">
+                  {item.coverUrl ? (
+                    <img src={item.coverUrl} alt={item.title} className="w-full h-full object-cover" />
+                  ) : (
+                    "封面"
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-text-primary truncate">{item.title}</div>
-                  <div className="text-xs text-text-secondary mt-0.5">@{item.author}</div>
+                  <div className="text-sm font-medium text-text-primary truncate">{item.title || "未知作品"}</div>
+                  <div className="text-xs text-text-secondary mt-0.5">@{item.author || "未知作者"}</div>
                 </div>
                 <Badge variant={item.type === "video" ? "video" : item.type === "image_set" ? "image_set" : "long_video"} />
                 <span className="text-xs text-text-secondary w-12 text-right flex-shrink-0">
@@ -125,21 +176,31 @@ export default function ProfileFetchPage() {
               </div>
             ))}
           </div>
-          <div className="flex items-center gap-3 px-6 h-14 border-t border-border-light bg-white">
+          <div className="flex items-center gap-3 px-6 h-14 border-t border-border-light bg-bg-input">
             <span className="text-xs text-text-secondary flex-1">
-              下载目录: D:\Downloads\DouyinCatcher
+              已选择 {selected.size} 个作品
             </span>
-            <Button disabled={selected.size === 0}>开始下载 ({selected.size})</Button>
+            <Button disabled={selected.size === 0} onClick={handleDownload}>
+              开始下载 ({selected.size})
+            </Button>
           </div>
         </div>
       )}
 
-      {!fetched && (
+      {/* Empty / Loading */}
+      {results.length === 0 && !error && (
         <div className="flex-1 flex items-center justify-center text-text-disabled">
-          <div className="text-center">
-            <div className="text-4xl mb-3 opacity-50">👤</div>
-            <p className="text-sm">输入用户主页链接并点击"开始抓取"</p>
-          </div>
+          {loading ? (
+            <div className="text-center">
+              <Loader2 size={32} className="mx-auto mb-3 animate-spin" />
+              <p className="text-sm">正在抓取主页作品...</p>
+            </div>
+          ) : (
+            <div className="text-center">
+              <div className="text-4xl mb-3 opacity-50">👤</div>
+              <p className="text-sm">输入用户主页链接并点击"开始抓取"</p>
+            </div>
+          )}
         </div>
       )}
     </div>
