@@ -181,7 +181,7 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-text-primary">撷风拾影 (XieFengShiYing)</p>
-                <p className="text-xs text-text-secondary mt-0.5">版本: v0.2.9</p>
+                <p className="text-xs text-text-secondary mt-0.5">版本: v0.3.0</p>
               </div>
               <div className="flex gap-2">
                 <Button variant="secondary" size="sm" disabled>检查更新</Button>

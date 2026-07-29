@@ -1,6 +1,6 @@
 [package]
 name = "xiefeng-shiying"
-version = "0.2.9"
+version = "0.3.0"
 description = "撷风拾影 - 抖音视频下载桌面工具"
 authors = ["chenwentao"]
 edition = "2021"

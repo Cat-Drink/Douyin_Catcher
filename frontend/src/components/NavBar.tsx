@@ -72,7 +72,7 @@ export function NavBar() {
 
         {/* Version */}
         <div className="flex items-center justify-between px-3 text-xs text-text-disabled">
-          <span>v0.2.9</span>
+          <span>v0.3.0</span>
         </div>
       </div>
     </nav>

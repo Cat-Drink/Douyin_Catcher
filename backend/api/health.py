@@ -14,7 +14,7 @@ router = APIRouter()
 @router.get("/health")
 async def health_check():
     """基础健康检查：服务是否运行。"""
-    return {"status": "ok", "service": "python-sidecar", "version": "0.2.9"}
+    return {"status": "ok", "service": "python-sidecar", "version": "0.3.0"}
 
 
 @router.get("/ready")

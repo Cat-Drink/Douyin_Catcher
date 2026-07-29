@@ -3,6 +3,7 @@ use tauri::{
     tray::TrayIconBuilder,
     Manager,
 };
+use tauri_plugin_shell::ShellExt;
 
 /// 打开侧边栏链接（在默认浏览器中打开）
 #[tauri::command]
@@ -13,7 +14,7 @@ fn open_link(url: String) -> Result<(), String> {
 /// 获取应用版本号
 #[tauri::command]
 fn get_app_version() -> String {
-    "0.2.8".to_string()
+    "0.3.0".to_string()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -48,6 +49,14 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+
+            // 启动 Python sidecar
+            let sidecar_command = app.shell().sidecar("backend-sidecar")
+                .map_err(|e| e.to_string())?;
+            let (mut _rx, _child) = sidecar_command
+                .args(&["--host", "127.0.0.1", "--port", "18989"])
+                .spawn()
+                .map_err(|e| e.to_string())?;
 
             Ok(())
         })
