@@ -34,7 +34,7 @@ function mapTaskItem(item: TaskItemResponse): DisplayTask {
     type: (item.type as DisplayTask["type"]) || "video",
     duration: "",
     imageCount: 0,
-    coverUrl: "",
+    coverUrl: item.cover_url || "",
     status: item.status as api.TaskStatus,
     progress: item.progress,
     downloadedBytes: item.downloaded_bytes,
@@ -63,6 +63,8 @@ interface TaskStore {
   pauseItem: (itemId: number) => Promise<void>;
   /** 恢复单项 */
   resumeItem: (itemId: number) => Promise<void>;
+  /** 重新执行单项 */
+  retryItem: (itemId: number) => Promise<void>;
   /** 全部暂停 */
   pauseAll: () => Promise<void>;
   /** 全部恢复 */
@@ -136,6 +138,15 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       }));
     } catch (e) {
       console.error("恢复失败:", e);
+    }
+  },
+
+  retryItem: async (itemId) => {
+    try {
+      await api.retryDownload(itemId);
+      await get().loadTasks();
+    } catch (e) {
+      console.error("重新执行失败:", e);
     }
   },
 

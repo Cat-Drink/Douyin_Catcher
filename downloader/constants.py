@@ -27,3 +27,9 @@ SEGMENT_SIZE: int = 2 * 1024 * 1024  # 2MB
 
 # 最大分片数
 MAX_SEGMENTS: int = 8
+
+# === 文件命名 ===
+
+# 本地文件基础名最大长度（字符）
+# 问题归档 #4：采用"作者名 + 源媒体标题"截取前若干字作为文件名
+MAX_FILENAME_BASE_LENGTH: int = 50

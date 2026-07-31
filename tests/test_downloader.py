@@ -176,12 +176,58 @@ class TestPathDerivation:
         assert path == tmp_path / "aweme123.mp4"
 
     def test_get_final_path_image_set(self, tmp_path: Path) -> None:
-        """image_set 类型路径：{download_dir}/{aweme_id}/{aweme_id}_{index}.jpg"""
+        """image_set 类型路径：{download_dir}/{基础名}/{基础名}-{index}.jpg"""
         dl, item = _make_downloader_with_item(
             download_dir=str(tmp_path), aweme_id="aweme456", item_type="image_set"
         )
         path = dl._get_final_path(item, "https://example.com/img.jpg", index=2)
-        assert path == tmp_path / "aweme456" / "aweme456_2.jpg"
+        assert path == tmp_path / "aweme456" / "aweme456-2.jpg"
+
+    def test_get_final_path_video_uses_author_and_title(self, tmp_path: Path) -> None:
+        """video 命名（问题归档 #4）：作者名 + 源媒体标题。"""
+        dl, item = _make_downloader_with_item(
+            download_dir=str(tmp_path),
+            aweme_id="aweme123",
+            title="一条测试视频",
+            author="@张三",
+        )
+        path = dl._get_final_path(item, "https://example.com/video.mp4")
+        assert path == tmp_path / "@张三一条测试视频.mp4"
+
+    def test_get_final_path_sanitizes_illegal_chars(self, tmp_path: Path) -> None:
+        """Windows 非法字符替换为下划线。"""
+        dl, item = _make_downloader_with_item(
+            download_dir=str(tmp_path),
+            aweme_id="aweme123",
+            title='标题:含"非法/符\\号?*字符',
+            author="作者",
+        )
+        path = dl._get_final_path(item, "https://example.com/video.mp4")
+        assert path.name == "作者标题_含_非法_符_号__字符.mp4"
+
+    def test_get_final_path_truncates_long_title(self, tmp_path: Path) -> None:
+        """超长标题截取前 MAX_FILENAME_BASE_LENGTH 字。"""
+        dl, item = _make_downloader_with_item(
+            download_dir=str(tmp_path),
+            aweme_id="aweme123",
+            title="超长标题" * 30,
+            author="作者",
+        )
+        path = dl._get_final_path(item, "https://example.com/video.mp4")
+        assert path.stem == ("作者" + "超长标题" * 30)[:50]
+        assert len(path.stem) == 50
+
+    def test_get_final_path_image_set_uses_author_and_title(self, tmp_path: Path) -> None:
+        """image_set 命名（问题归档 #4）：同名文件夹 + -{index} 后缀。"""
+        dl, item = _make_downloader_with_item(
+            download_dir=str(tmp_path),
+            aweme_id="aweme456",
+            item_type="image_set",
+            title="旅游图集",
+            author="@李四",
+        )
+        path = dl._get_final_path(item, "https://example.com/img.jpg", index=1)
+        assert path == tmp_path / "@李四旅游图集" / "@李四旅游图集-1.jpg"
 
     def test_get_final_path_no_aweme_id(self, tmp_path: Path) -> None:
         """aweme_id 为 None 时用 item_{id} 替代。"""
@@ -1074,6 +1120,8 @@ def _make_downloader_with_item(
     url: str = "https://cdn.example.com/v.mp4",
     item_id: int = 1,
     task_id: int = 1,
+    title: str | None = None,
+    author: str | None = None,
     conn: sqlite3.Connection | None = None,
     video_parser: VideoParser | None = None,
     cookie_repository: CookieRepository | None = None,
@@ -1110,6 +1158,8 @@ def _make_downloader_with_item(
         url=url,
         type=item_type,
         status="pending",
+        title=title,
+        author=author,
     )
     return dl, item
 

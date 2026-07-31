@@ -50,6 +50,7 @@ class TaskItemResponse(BaseModel):
     downloaded_bytes: int
     total_bytes: int
     progress: float = 0.0
+    cover_url: str | None = None
     fail_reason: str | None
     local_path: str | None
 
@@ -103,6 +104,7 @@ async def list_task_items(task_id: int):
             downloaded_bytes=item.downloaded_bytes,
             total_bytes=item.total_bytes,
             progress=(item.downloaded_bytes / max(item.total_bytes, 1)) * 100 if item.total_bytes > 0 else 0.0,
+            cover_url=item.cover_url,
             fail_reason=item.fail_reason,
             local_path=item.local_path,
         )
@@ -205,6 +207,20 @@ async def resume_download(task_item_id: int):
         raise HTTPException(status_code=503, detail="Service not ready")
     await ctx.scheduler.resume(task_item_id)
     return {"message": f"task_item {task_item_id} 已恢复"}
+
+
+@router.post("/retry/{task_item_id}")
+async def retry_download(task_item_id: int):
+    """重新执行下载项：重置为待下载状态并重新入队。"""
+    if ctx.task_item_repo is None or ctx.scheduler is None:
+        raise HTTPException(status_code=503, detail="Service not ready")
+    item = ctx.task_item_repo.get(task_item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="任务项不存在")
+    ctx.task_item_repo.reset_for_retry(task_item_id)
+    # 状态已重置为 pending，不会被已完成去重跳过
+    ctx.scheduler.add_task_items([item])
+    return {"message": f"任务项 {task_item_id} 已重新入队"}
 
 
 @router.post("/pause-all")

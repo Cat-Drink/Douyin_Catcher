@@ -44,6 +44,7 @@ export interface TaskItemResponse {
   downloaded_bytes: number;
   total_bytes: number;
   progress: number;
+  cover_url: string | null;
   fail_reason: string | null;
   local_path: string | null;
 }
@@ -105,6 +106,10 @@ export async function pauseDownload(taskItemId: number): Promise<{ message: stri
 
 export async function resumeDownload(taskItemId: number): Promise<{ message: string }> {
   return request(`/download/resume/${taskItemId}`, { method: "POST" });
+}
+
+export async function retryDownload(taskItemId: number): Promise<{ message: string }> {
+  return request(`/download/retry/${taskItemId}`, { method: "POST" });
 }
 
 export async function pauseAll(): Promise<{ message: string }> {

@@ -16,7 +16,7 @@ export default function DownloadPage() {
   const {
     items, loading, error,
     loadTasks, applyProgressUpdate,
-    pauseItem, resumeItem, pauseAll, resumeAll, clearCompleted,
+    pauseItem, resumeItem, retryItem, pauseAll, resumeAll, clearCompleted,
   } = useTaskStore();
   const { addToast } = useToastStore();
 
@@ -154,6 +154,7 @@ export default function DownloadPage() {
                 task={task}
                 onPause={pauseItem}
                 onResume={resumeItem}
+                onRetry={retryItem}
                 onDelete={handleDeleteItem}
               />
             ))}
