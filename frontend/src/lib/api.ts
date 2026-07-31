@@ -90,7 +90,7 @@ export async function fetchTaskItems(taskId: number): Promise<TaskItemResponse[]
 export async function startDownload(params: {
   source_type?: string;
   source_url?: string | null;
-  items?: { url: string; title?: string; author?: string; type?: string; aweme_id?: string; cover_url?: string; image_count?: number }[];
+  items?: { url: string; title?: string; author?: string; type?: string; aweme_id?: string; cover_url?: string; image_count?: number; no_watermark_url?: string; image_urls?: string[] }[];
   download_dir?: string;
 }): Promise<{ task_id: number; message: string }> {
   return request("/download/start", {

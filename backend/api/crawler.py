@@ -31,6 +31,8 @@ class ParsedURLResponse(BaseModel):
     cover_url: str | None = None
     duration: str | None = None
     image_count: int | None = None
+    no_watermark_url: str | None = None
+    image_urls: list[str] | None = None
     error: str | None = None
 
 
@@ -89,6 +91,8 @@ async def parse_urls(req: ParseRequest):
                         cover_url=video_info.cover_url,
                         duration=video_info.duration,
                         image_count=len(video_info.image_urls) if video_info.image_urls else None,
+                        no_watermark_url=video_info.no_watermark_url,
+                        image_urls=video_info.image_urls or None,
                     ))
                 except Exception as ve:
                     # VideoParser 失败，回退到基本解析信息
@@ -198,6 +202,8 @@ async def preview_url(url: str):
                     cover_url=video_info.cover_url,
                     duration=video_info.duration,
                     image_count=len(video_info.image_urls) if video_info.image_urls else None,
+                    no_watermark_url=video_info.no_watermark_url,
+                    image_urls=video_info.image_urls or None,
                 )
             except Exception as ve:
                 return ParsedURLResponse(url=url, type=parsed_url.type, aweme_id=aweme_id, error=str(ve))

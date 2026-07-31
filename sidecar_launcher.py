@@ -2,6 +2,8 @@
 
 被 PyInstaller 打包为单一可执行文件，供 Tauri 桌面壳作为 sidecar 启动。
 """
+import backend.app  # noqa: F401  让 PyInstaller 静态分析收集完整依赖（含 fastapi/sqlite3 等）
+
 import uvicorn
 
 if __name__ == "__main__":

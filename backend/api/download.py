@@ -7,7 +7,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.models import SourceType, Task, TaskItem, TaskStatus, now_iso
+from app.models import SourceType, Task, TaskItem, TaskItemStatus, TaskStatus, now_iso
 from backend.state import ctx
 
 router = APIRouter()
@@ -131,17 +131,49 @@ async def start_download(req: StartDownloadRequest):
     # 如果有传入 items，直接创建 task_items 并入队
     if req.items:
         items = []
+        # 获取有效 Cookie（供二次解析真实媒体地址）
+        cookie = ""
+        if ctx.cookie_repo is not None:
+            valid_cookie = ctx.cookie_repo.get_valid()
+            if valid_cookie is not None:
+                cookie = valid_cookie.content
+
         for item_data in req.items:
+            item_type = item_data.get("type", "video")
+            aweme_id = item_data.get("aweme_id")
+            media_url = item_data.get("no_watermark_url") or ""
+            image_urls = item_data.get("image_urls") or []
+
+            # 前端未提供真实媒体地址时，用 aweme_id 二次解析 detail 接口获取
+            if not (media_url or image_urls) and aweme_id and ctx.video_parser is not None:
+                try:
+                    video_info = await ctx.video_parser.parse_video(aweme_id, cookie)
+                    if item_type == "image_set" and video_info.image_urls:
+                        image_urls = video_info.image_urls
+                    elif video_info.no_watermark_url:
+                        media_url = video_info.no_watermark_url
+                except Exception:
+                    # 解析失败时回退到原始 URL，交由下载器/用户界面反馈
+                    pass
+
+            # 图集：换行分隔多张图片 URL；视频：使用无水印直链
+            if item_type == "image_set" and image_urls:
+                download_url = "\n".join(image_urls)
+            elif media_url:
+                download_url = media_url
+            else:
+                download_url = item_data.get("url", "")
+
             task_item = TaskItem(
                 id=None,
                 task_id=task_id,
-                aweme_id=item_data.get("aweme_id"),
-                url=item_data.get("url", ""),
+                aweme_id=aweme_id,
+                url=download_url,
                 title=item_data.get("title"),
                 author=item_data.get("author"),
-                type=item_data.get("type", "video"),
+                type=item_type,
                 cover_url=item_data.get("cover_url"),
-                image_count=item_data.get("image_count"),
+                image_count=len(image_urls) if item_type == "image_set" and image_urls else item_data.get("image_count"),
                 status=TaskItemStatus.PENDING.value,
             )
             item_id = ctx.task_item_repo.create(task_item)

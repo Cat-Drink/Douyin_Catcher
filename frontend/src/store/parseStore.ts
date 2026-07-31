@@ -14,6 +14,8 @@ export interface ParsedResult {
   coverUrl?: string;
   duration?: string;
   imageCount?: number;
+  noWatermarkUrl?: string;
+  imageUrls?: string[];
   error?: string;
 }
 
@@ -65,6 +67,8 @@ export const useParseStore = create<ParseStore>((set) => ({
         coverUrl: r.cover_url,
         duration: r.duration,
         imageCount: r.image_count,
+        noWatermarkUrl: r.no_watermark_url || undefined,
+        imageUrls: r.image_urls || undefined,
         error: r.error || undefined,
       }));
       set({ batchResults: results, batchLoading: false });
@@ -94,6 +98,8 @@ export const useParseStore = create<ParseStore>((set) => ({
         coverUrl: r.cover_url,
         duration: r.duration,
         imageCount: r.image_count,
+        noWatermarkUrl: r.no_watermark_url || undefined,
+        imageUrls: r.image_urls || undefined,
       }));
       set({ profileResults: results, profileLoading: false });
     } catch (e) {
@@ -119,6 +125,8 @@ export const useParseStore = create<ParseStore>((set) => ({
         aweme_id: item.awemeId,
         cover_url: item.coverUrl,
         image_count: item.imageCount,
+        no_watermark_url: item.noWatermarkUrl,
+        image_urls: item.imageUrls,
       }));
 
     if (downloadItems.length === 0) return;

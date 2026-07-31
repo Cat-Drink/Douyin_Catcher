@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Plus, RefreshCw, Trash2, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { StatusDot } from "../components/ui/status-dot";
+import { Textarea } from "../components/ui/textarea";
 import { useToastStore } from "../store/toastStore";
 import * as api from "../lib/api";
 
@@ -164,11 +165,10 @@ export default function CookiePage() {
       {/* Add Form */}
       {showAddForm && (
         <div className="px-6 py-4 border-b border-border-light bg-bg-gray">
-          <div className="flex flex-col gap-3 max-w-xl">
+          <div className="flex flex-col gap-3 max-w-3xl">
             <div>
               <label className="text-xs text-text-secondary mb-1 block">Cookie 内容</label>
-              <textarea
-                className="w-full h-20 px-3 py-2 text-sm border border-border-light rounded-sm focus:outline-none focus:border-purple-500 resize-none"
+              <Textarea
                 placeholder="粘贴完整的 Cookie 字符串..."
                 value={newCookieContent}
                 onChange={(e) => setNewCookieContent(e.target.value)}
