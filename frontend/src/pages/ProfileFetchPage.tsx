@@ -16,6 +16,7 @@ export default function ProfileFetchPage() {
     profileLoading: loading,
     profileError: error,
     fetchHome,
+    removeProfileItems,
     downloadSelected,
   } = useParseStore();
 
@@ -49,7 +50,11 @@ export default function ProfileFetchPage() {
     const items = selected.size === 0 ? [] : filtered.filter((_, i) => selected.has(i));
     if (items.length === 0) return;
     try {
-      await downloadSelected(items);
+      const enqueued = await downloadSelected(items);
+      // 已入队下载的解析项从列表中移除
+      if (enqueued.length > 0) {
+        removeProfileItems(new Set(enqueued.map((i) => i.index)));
+      }
       setSelected(new Set());
     } catch (e) {
       alert(e instanceof Error ? e.message : "下载入队失败");

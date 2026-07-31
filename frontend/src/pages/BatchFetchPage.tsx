@@ -16,6 +16,7 @@ export default function BatchFetchPage() {
     batchLoading: loading,
     batchError: error,
     parseUrls,
+    removeBatchItems,
     downloadSelected,
   } = useParseStore();
 
@@ -57,10 +58,14 @@ export default function BatchFetchPage() {
     const items = selected.size === 0 ? [] : parsed.filter((_, i) => selected.has(i));
     if (items.length === 0) return;
     try {
-      await downloadSelected(items);
+      const enqueued = await downloadSelected(items);
+      // 已入队下载的解析项从列表中移除
+      if (enqueued.length > 0) {
+        removeBatchItems(new Set(enqueued.map((i) => i.index)));
+        addToast(`下载任务已创建（${enqueued.length} 项）`, "success");
+      }
       // 清空选择
       setSelected(new Set());
-      addToast("下载任务已创建", "success");
     } catch (e) {
       addToast(e instanceof Error ? e.message : "下载入队失败", "error");
     }

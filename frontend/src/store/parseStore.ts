@@ -34,14 +34,18 @@ interface ParseStore {
   parseUrls: (urls: string[]) => Promise<void>;
   /** 清空批量解析结果 */
   clearBatch: () => void;
+  /** 移除已入队下载的批量解析项 */
+  removeBatchItems: (indices: Set<number>) => void;
 
   /** 主页抓取 */
   fetchHome: (url: string, maxItems?: number) => Promise<void>;
   /** 清空主页抓取结果 */
   clearProfile: () => void;
+  /** 移除已入队下载的主页解析项 */
+  removeProfileItems: (indices: Set<number>) => void;
 
-  /** 将勾选结果入队下载 */
-  downloadSelected: (items: ParsedResult[], downloadDir?: string) => Promise<void>;
+  /** 将勾选结果入队下载，返回实际入队的解析项 */
+  downloadSelected: (items: ParsedResult[], downloadDir?: string) => Promise<ParsedResult[]>;
 }
 
 export const useParseStore = create<ParseStore>((set) => ({
@@ -84,6 +88,12 @@ export const useParseStore = create<ParseStore>((set) => ({
     set({ batchResults: [], batchError: null });
   },
 
+  removeBatchItems: (indices) => {
+    set((state) => ({
+      batchResults: state.batchResults.filter((r) => !indices.has(r.index)),
+    }));
+  },
+
   fetchHome: async (url: string, maxItems = 50) => {
     set({ profileLoading: true, profileError: null, profileResults: [] });
     try {
@@ -114,9 +124,16 @@ export const useParseStore = create<ParseStore>((set) => ({
     set({ profileResults: [], profileError: null });
   },
 
+  removeProfileItems: (indices) => {
+    set((state) => ({
+      profileResults: state.profileResults.filter((r) => !indices.has(r.index)),
+    }));
+  },
+
   downloadSelected: async (items: ParsedResult[], downloadDir?: string) => {
-    const downloadItems = items
-      .filter((item) => item.type !== "user_home" && !item.error)
+    // 仅入队可下载项（跳过 user_home 与解析失败项），返回实际入队的解析项
+    const enqueued = items.filter((item) => item.type !== "user_home" && !item.error);
+    const downloadItems = enqueued
       .map((item) => ({
         url: item.url,
         title: item.title,
@@ -129,13 +146,14 @@ export const useParseStore = create<ParseStore>((set) => ({
         image_urls: item.imageUrls,
       }));
 
-    if (downloadItems.length === 0) return;
+    if (downloadItems.length === 0) return [];
 
     await api.startDownload({
       source_type: "batch",
       items: downloadItems,
       download_dir: downloadDir,
     });
+    return enqueued;
   },
 }));
 

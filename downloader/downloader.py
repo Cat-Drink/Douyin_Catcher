@@ -152,6 +152,9 @@ class Downloader:
         self._task_repo = TaskRepository(conn)
         self._video_parser = video_parser
         self._cookie_repository = cookie_repository
+        # 按目标文件路径的并发锁：防止同名目标（同一视频/图集被多次下载）
+        # 并发写同一个 .part 文件导致合并阶段文件占用冲突（WinError 32）
+        self._file_locks: dict[str, asyncio.Lock] = {}
 
     # === 路径推导 ===
 
@@ -591,11 +594,17 @@ class Downloader:
             final_path = self._get_final_path(task_item, urls[0], index=1)
             target_dir = final_path.parent
             target_dir.mkdir(parents=True, exist_ok=True)
-            return await self._download_image_set(task_item, urls, target_dir)
+            # 图集：按目标文件夹串行化，防止同名图集并发写冲突
+            lock = self._file_locks.setdefault(str(target_dir), asyncio.Lock())
+            async with lock:
+                return await self._download_image_set(task_item, urls, target_dir)
 
         final_path = self._get_final_path(task_item, task_item.url)
         final_path.parent.mkdir(parents=True, exist_ok=True)
-        return await self._download_single_file(task_item, task_item.url, final_path)
+        # 视频：按目标文件串行化，防止同名目标并发写 .part 冲突
+        lock = self._file_locks.setdefault(str(final_path), asyncio.Lock())
+        async with lock:
+            return await self._download_single_file(task_item, task_item.url, final_path)
 
     async def _download_single_file(
         self,
