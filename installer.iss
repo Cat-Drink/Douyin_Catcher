@@ -27,7 +27,7 @@
 #endif
 #define MyAppPublisher "撷风拾影 Contributors"
 #define MyAppExeName "XieFengShiYing.exe"
-#define MyAppURL "https://github.com/Evil0ctal/Douyin_TikTok_Download_API"
+#define MyAppURL "https://github.com/Cat-Drink/Douyin_Catcher"
 
 [Setup]
 ; 应用信息
