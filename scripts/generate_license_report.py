@@ -12,7 +12,6 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 
-
 _PYTHON_DEPENDENCY_RE = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s*(?:[<>=!~].*)?$", re.MULTILINE)
 _CARGO_PACKAGE_RE = re.compile(
     r'^\[\[package\]\]\s*\nname\s*=\s*"([^"]+)"\s*\nversion\s*=\s*"([^"]+)"',
@@ -91,7 +90,10 @@ def build_report(root: Path, generated_at: str | None = None) -> str:
         "| --- | --- | --- |",
     ]
     for dependency in python_dependencies:
-        lines.append(f"| `{dependency}` | 需人工核实（从 pip show 或包元数据确认） | `requirements.txt` |")
+        lines.append(
+            f"| `{dependency}` | 需人工核实（从 pip show 或包元数据确认）"
+            " | `requirements.txt` |"
+        )
     if not python_dependencies:
         lines.append("| （未发现） | — | `requirements.txt` |")
 
