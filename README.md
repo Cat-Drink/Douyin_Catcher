@@ -16,7 +16,7 @@
       <img src="https://img.shields.io/github/v/release/Cat-Drink/Douyin_Catcher?style=flat-square&label=版本&color=7C3AED" alt="版本">
     </a>
     <img src="https://img.shields.io/badge/Python-3.11+-4B8BBE?style=flat-square&logo=python&logoColor=white" alt="Python">
-    <img src="https://img.shields.io/badge/UI-PySide6-41CD52?style=flat-square&logo=qt&logoColor=white" alt="PySide6">
+    <img src="https://img.shields.io/badge/UI-Tauri%20%2F%20React-41CD52?style=flat-square&logo=react&logoColor=white" alt="Tauri React">
     <a href="LICENSE">
       <img src="https://img.shields.io/badge/许可证-MIT-EB9E5C?style=flat-square" alt="MIT">
     </a>
@@ -24,9 +24,9 @@
   </p>
 
   <p align="center">
-    <img src="https://img.shields.io/badge/✅%20测试-75%20passing-22C55E?style=flat-square" alt="tests">
-    <img src="https://img.shields.io/badge/📐%20行数-~7000%20lines-3B82F6?style=flat-square" alt="lines">
-    <img src="https://img.shields.io/badge/📦%20构建-PyInstaller-FF6B35?style=flat-square&logo=python&logoColor=white" alt="build">
+    <img src="https://img.shields.io/badge/✅%20测试-599%20passing-22C55E?style=flat-square" alt="tests">
+    <img src="https://img.shields.io/badge/📐%20覆盖率-85.68%25-3B82F6?style=flat-square" alt="coverage">
+    <img src="https://img.shields.io/badge/📦%20构建-Tauri%20%2B%20PyInstaller-FF6B35?style=flat-square" alt="build">
   </p>
 
   <br>
@@ -60,7 +60,7 @@
 | | | |
 |:---:|:---:|:---:|
 | 📹 **内容全覆盖** | ⚡ **智能下载引擎** | 🎨 **舒适体验** |
-| 短视频 · 图文 · 长视频<br>单链接 · 批量 · 主页抓取 | 断点续传 · 并发下载<br>分块加速 · 自动重试 | 现代 PySide6 界面<br>实时进度 · 元数据导出 |
+| 短视频 · 图文 · 长视频<br>单链接 · 批量 · 主页抓取 | 断点续传 · 并发下载<br>分块加速 · 自动重试 | 现代 Tauri 桌面界面<br>实时进度 · 元数据导出 |
 
 </div>
 
@@ -106,11 +106,12 @@
 
 | 能力 | 说明 |
 |:---|:---|
-| 🖥️ **现代 UI 界面** | 基于 PySide6 构建，简洁直观、操作流畅 |
+| 🖥️ **现代桌面界面** | 基于 Tauri + React 构建，原生窗口体验，流畅高效 |
+| 🌙 **深色模式** | 支持浅色/深色主题一键切换，护眼舒适 |
 | 📊 **实时进度反馈** | 下载进度、速度、状态一目了然，心中有数 |
 | 📝 **元数据导出** | 支持 **JSON** / **CSV** 格式导出作品元数据 |
 | 🧭 **首次引导** | 首次启动引导配置 Cookie 与下载目录，零门槛上手 |
-| 🎯 **侧边栏状态栏** | 底部固定显示下载统计（总数 / 下载中 / 已完成 / 失败） |
+| 🎯 **系统托盘** | 最小化到托盘，后台持续下载，不干扰工作 |
 
 </details>
 
@@ -126,44 +127,13 @@
 
 <br>
 
-```mermaid
----
-config:
-  theme: base
-  themeVariables:
-    primaryColor: "#7C3AED"
-    primaryBorderColor: "#5B21B6"
-    lineColor: "#E5E7EB"
-    textColor: "#374151"
----
-flowchart TD
-    subgraph MainWindow["主窗口框架"]
-        direction LR
-        NavBar["左侧导航栏 200px"]
-        Content["右侧内容区 QStackedWidget"]
-    end
-
-    NavBar --> NavItem0["📥 下载任务"]
-    NavBar --> NavItem1["🔗 链接抓取"]
-    NavBar --> NavItem2["🍪 Cookie 配置"]
-    NavBar --> NavItem3["⚙️ 设置"]
-
-    Content --> Page0["下载队列<br/>进度 / 暂停 / 恢复"]
-    Content --> Page1["粘贴链接<br/>批量解析"]
-    Content --> Page2["Cookie 管理<br/>测试 / 查看"]
-    Content --> Page3["系统配置<br/>目录 / 并发 / 元数据"]
-
-    NavBar --> StatusBar["📊 总数 · 下载中 · 已完成 · 失败"]
-```
-
-<br>
-
 | 页面 | 功能 | 入口 |
 |:---|:---|:---:|
-| 📥 **下载任务** | 查看下载队列，查看进度、暂停、恢复、重试 | 导航栏第 1 项 |
-| 🔗 **链接抓取** | 粘贴抖音链接，批量解析作品信息并加入下载 | 导航栏第 2 项 |
-| 🍪 **Cookie 配置** | 添加 / 测试 / 管理 Cookie，查看详细教程 | 导航栏第 3 项 |
-| ⚙️ **设置** | 下载目录、并发数、分块大小、元数据格式 | 导航栏第 4 项 |
+| 📥 **下载任务** | 查看下载队列，进度、暂停、恢复、重试 | 导航栏第 1 项 |
+| 🔗 **批量抓取** | 粘贴抖音链接，批量解析作品信息并加入下载 | 导航栏第 2 项 |
+| 👤 **主页抓取** | 输入用户主页链接，批量抓取作品 | 导航栏第 3 项 |
+| 🍪 **Cookie 配置** | 添加 / 测试 / 管理 Cookie，查看详细教程 | 导航栏第 4 项 |
+| ⚙️ **设置** | 下载目录、并发数、分块大小、元数据格式 | 导航栏第 5 项 |
 
 <br>
 
@@ -178,7 +148,7 @@ flowchart TD
 从 [GitHub Releases](https://github.com/Cat-Drink/Douyin_Catcher/releases) 页面下载最新版安装包：
 
 ```text
-XieFengShiYing_Setup_v0.2.2.exe
+撷风拾影_0.3.0_x64-setup.exe
 ```
 
 运行安装包，按向导提示完成安装即可。
@@ -194,7 +164,7 @@ XieFengShiYing_Setup_v0.2.2.exe
 
 | 步骤 | 操作 |
 |:---:|:---|
-| **1** | 浏览器打开 [douyin.com](https://www.douyin.com) 并登录你的账号 |
+| **1** | 打开抖音官网 [douyin.com](https://www.douyin.com) 并登录你的账号 |
 | **2** | 按 <kbd>F12</kbd> 打开开发者工具，切换到 **Network**（网络）标签 |
 | **3** | 刷新页面，点击任意网络请求 |
 | **4** | 在请求的 **Request Headers** 中找到 `Cookie:` 字段，右键复制完整值 |
@@ -215,49 +185,71 @@ XieFengShiYing_Setup_v0.2.2.exe
 | 项目 | 要求 |
 |:---|:---|
 | 🐍 **Python** | 3.11 或更高版本 |
+| 🟢 **Node.js** | 18 或更高版本 |
+| 🦀 **Rust** | 1.70 或更高版本 |
 | 🪟 **操作系统** | Windows 10 / 11（x64） |
-| 📦 **包管理器** | pip |
 
 ### 🔧 本地开发
 
-```powershell
-# 1. 克隆仓库
-git clone https://github.com/Cat-Drink/Douyin_Catcher.git
-cd Douyin_Catcher
+#### 后端 (Python FastAPI)
 
-# 2. 创建并激活虚拟环境
+```powershell
+# 1. 创建并激活虚拟环境
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
-# 3. 安装开发依赖
-pip install -r requirements-dev.txt
+# 2. 安装依赖
+pip install -r requirements.txt
 
-# 4. 运行测试
+# 3. 启动后端服务
+uvicorn backend.app:app --host 127.0.0.1 --port 18989 --reload
+```
+
+#### 前端 (Tauri + React)
+
+```powershell
+# 1. 进入前端目录
+cd frontend
+
+# 2. 安装依赖
+npm install
+
+# 3. 启动开发服务器（仅前端）
+npm run dev
+
+# 4. 启动 Tauri 桌面应用（前后端联动）
+npm run tauri dev
+```
+
+### 🧪 运行测试
+
+```powershell
+# Python 后端测试（599 项，覆盖率 ≥ 80%）
 pytest
 
-# 5. 代码规范检查
-ruff check .
-black --check .
+# 前端 TypeScript 类型检查
+cd frontend && npx tsc --noEmit
 ```
 
 ### 📦 打包构建
 
 ```powershell
-# PyInstaller 打包（生成 dist/XieFengShiYing/ 目录）
-pyinstaller XieFengShiYing.spec --noconfirm
+# 1. 打包 Python sidecar（生成 binaries/backend-sidecar.exe）
+pyinstaller --onefile --name backend-sidecar --distpath frontend/src-tauri/binaries --add-data "backend;backend" --add-data "app;app" --add-data "crawlers;crawlers" --add-data "downloader;downloader" --console sidecar_launcher.py
 
-# 生成安装包（需安装 Inno Setup 6）
-"%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" installer.iss
+# 2. 构建 Tauri 安装包（生成 NSIS 安装包）
+cd frontend
+npm run tauri build -- --bundles nsis
 ```
 
 ### ✅ 代码质量
 
 | 工具 | 用途 | 配置 |
 |:---|:---|:---|
-| [Ruff](https://github.com/astral-sh/ruff) | 代码检查（pycodestyle + pyflakes + isort + pyupgrade + bugbear） | `pyproject.toml` |
-| [Black](https://github.com/psf/black) | 代码格式化 | `pyproject.toml`（行宽 100） |
-| [Mypy](https://github.com/python/mypy) | 静态类型检查 | `pyproject.toml` |
-| [Pytest](https://github.com/pytest-dev/pytest) | 单元测试 + 集成测试 | `pyproject.toml`（覆盖率 ≥ 80%） |
+| [Ruff](https://github.com/astral-sh/ruff) | Python 代码检查 | `pyproject.toml` |
+| [Black](https://github.com/psf/black) | Python 代码格式化 | `pyproject.toml`（行宽 100） |
+| [TypeScript](https://www.typescriptlang.org/) | 前端类型检查 | `frontend/tsconfig.json` |
+| [Pytest](https://github.com/pytest-dev/pytest) | Python 单元测试 + 集成测试 | `pyproject.toml`（覆盖率 ≥ 80%） |
 
 <br>
 
@@ -271,12 +263,15 @@ pyinstaller XieFengShiYing.spec --noconfirm
 
 | 层级 | 技术 | 版本 | 用途 |
 |:---|:---|:---:|:---|
-| 🖥️ **UI 框架** | PySide6 (Qt) | 6.x | 图形用户界面 |
-| 🕷️ **爬虫引擎** | Python + httpx[http2] | ≥ 3.11 | 异步数据抓取与签名 |
+| 🖥️ **桌面壳** | Tauri 2 | 2.x | 原生窗口、托盘、系统集成 |
+| 🎨 **前端框架** | React 19 + TypeScript | 19.x | 用户界面 |
+| 💅 **样式系统** | Tailwind CSS 4 | 4.x | 原子化 CSS |
+| 🧩 **UI 组件** | shadcn/ui | — | 可复用组件库 |
+| 📡 **状态管理** | TanStack Query + Zustand | — | 服务端/客户端状态 |
+| 🐍 **后端服务** | Python FastAPI (sidecar) | ≥ 3.11 | REST API + WebSocket |
+| 🕷️ **爬虫引擎** | Python + httpx[http2] | — | 异步数据抓取与签名 |
 | 🗄️ **数据存储** | SQLite（WAL 模式） | — | 任务 / Cookie / 配置持久化 |
-| 📦 **打包分发** | PyInstaller + Inno Setup | — | 构建 Windows 安装包 |
-| 🎨 **代码质量** | Ruff + Black + Mypy | — | 静态检查与格式化 |
-| 🧪 **测试框架** | Pytest + Coverage | — | 单元测试与覆盖率 |
+| 📦 **打包分发** | Tauri (NSIS) + PyInstaller | — | 构建 Windows 安装包 |
 
 </div>
 
@@ -295,44 +290,41 @@ config:
     textColor: "#374151"
 ---
 flowchart TB
-    subgraph UI["UI 层 (PySide6)"]
-        MW["MainWindow"]
-        PAGES["DownloadPage / FetchPage<br/>CookiePage / SettingsPage"]
-        NAV["NavBar<br/>Widgets"]
+    subgraph DESKTOP["桌面壳 (Tauri 2)"]
+        TRAY["系统托盘"]
+        WINDOW["原生窗口管理"]
+        DIALOG["文件对话框"]
+        SIDECAR["Sidecar 进程管理"]
     end
 
-    subgraph WORKER["桥接层"]
-        AW["AsyncWorker<br/>(asyncio 事件循环)"]
-        DB["DownloadBridge"]
-        CB["CrawlerBridge"]
+    subgraph FRONTEND["前端 (React 18 + TypeScript)"]
+        UI["shadcn/ui 组件库"]
+        ROUTER["React Router 页面路由"]
+        QUERY["TanStack Query API 缓存"]
+        STORE["Zustand 客户端状态"]
+        WS["WebSocket 实时进度"]
     end
 
-    subgraph CRAWLER["爬虫层"]
-        SIGNER["Signer<br/>XBogus / ABogus / msToken"]
-        HTTP["HttpClient"]
-        PARSER["URLParser / VideoParser"]
-        COOKIE_TEST["CookieTester"]
+    subgraph SIDECAR_PY["Python Sidecar (FastAPI)"]
+        REST["REST API 层"]
+        WS_API["WebSocket 推送"]
+        SCHED["Scheduler 下载调度"]
+        CRAWLER_PY["爬虫引擎"]
+        SIGNER["签名算法"]
+        DB["SQLite 数据层"]
     end
 
-    subgraph DL["下载引擎"]
-        SCHED["Scheduler<br/>队列 · 并发 · 暂停/恢复"]
-        DOWN["Downloader<br/>分片 · 续传 · 重试"]
-        PROGRESS["ProgressReporter"]
-    end
-
-    subgraph DATA["数据层"]
-        DB_CONN["SQLite (WAL)"]
-        REPOS["Repository"]
-        CONFIG["Config"]
-        LOGGER["Logger"]
-    end
-
-    UI --> WORKER
-    WORKER --> CRAWLER
-    WORKER --> DL
-    CRAWLER --> DATA
-    DL --> DATA
+    DESKTOP -->|启动/管理| SIDECAR_PY
+    FRONTEND -->|HTTP / WS| SIDECAR_PY
+    DESKTOP -->|WebView 加载| FRONTEND
 ```
+
+架构说明：
+
+- **Tauri 桌面壳**：管理窗口、托盘、文件对话框，启动 Python sidecar 进程
+- **React 前端**：运行在 Tauri WebView 中，通过 REST API + WebSocket 与后端通信
+- **Python Sidecar**：独立的 FastAPI 进程，提供爬虫、下载、数据持久化能力
+- **前后端分离**：前端只管 UI，后端只管业务逻辑，通过 HTTP/WS 协议解耦
 
 <br>
 
@@ -343,59 +335,66 @@ flowchart TB
 ## 📁 项目结构
 
 ```text
-📦 XieFengShiYing/
-├── 📂 app/                  # 数据层
-│   ├── 📄 config.py         # 全局常量、路径、默认配置
-│   ├── 📄 database.py       # 数据库初始化与迁移
-│   ├── 📄 logger.py         # 日志配置
-│   ├── 📄 models.py         # 数据模型（Task, Cookie 等）
-│   └── 📂 repositories/     # 数据访问层
+📦 Douyin_Catcher/
+├── 📂 backend/               # FastAPI 后端服务
+│   ├── 📄 app.py             # 入口与生命周期管理
+│   ├── 📄 state.py           # 全局应用上下文
+│   ├── 📂 api/               # REST API 路由
+│   │   ├── 📄 health.py      # 健康检查
+│   │   ├── 📄 download.py    # 下载接口
+│   │   ├── 📄 crawler.py     # 爬虫接口
+│   │   ├── 📄 cookie.py      # Cookie 接口
+│   │   ├── 📄 config.py      # 配置接口
+│   │   └── 📄 ws.py          # WebSocket 实时推送
+│   └── 📂 services/          # 业务服务层
 │
-├── 📂 ui/                   # PySide6 界面
-│   ├── 📄 main_window.py    # 主窗口框架
-│   ├── 📂 pages/            # 功能页面
-│   │   ├── 📄 download_page.py
-│   │   ├── 📄 fetch_page.py
-│   │   ├── 📄 cookie_page.py
-│   │   ├── 📄 settings_page.py
-│   │   └── 📄 onboarding_page.py
-│   ├── 📂 widgets/          # 可复用组件
-│   │   ├── 📄 nav_bar.py
-│   │   └── 📄 toast.py
-│   └── 📂 assets/           # 样式表与资源
+├── 📂 frontend/              # Tauri + React 前端
+│   ├── 📂 src/               # 前端源码
+│   │   ├── 📂 components/    # UI 组件
+│   │   │   ├── 📂 ui/        # shadcn/ui 基础组件
+│   │   │   └── 📄 NavBar.tsx # 侧边导航栏
+│   │   ├── 📂 pages/         # 功能页面
+│   │   │   ├── 📄 DownloadPage.tsx
+│   │   │   ├── 📄 BatchFetchPage.tsx
+│   │   │   ├── 📄 ProfileFetchPage.tsx
+│   │   │   ├── 📄 CookiePage.tsx
+│   │   │   ├── 📄 SettingsPage.tsx
+│   │   │   └── 📄 OnboardingPage.tsx
+│   │   ├── 📂 store/         # Zustand 状态管理
+│   │   ├── 📂 hooks/         # 自定义 Hooks
+│   │   ├── 📂 lib/           # 工具函数与 API 封装
+│   │   └── 📂 layouts/       # 布局组件
+│   ├── 📂 src-tauri/         # Tauri Rust 后端
+│   │   ├── 📂 src/
+│   │   │   └── 📄 lib.rs     # 托盘、命令、sidecar 启动
+│   │   ├── 📄 tauri.conf.json
+│   │   └── 📄 Cargo.toml
+│   └── 📄 package.json
 │
-├── 📂 crawlers/             # 爬虫组件
-│   ├── 📂 signer/           # 签名算法
-│   │   ├── 📄 xbogus.py
-│   │   ├── 📄 abogus.py
-│   │   ├── 📄 mstoken.py
-│   │   └── 📄 verify_fp.py
-│   ├── 📄 http_client.py    # HTTP 客户端
-│   ├── 📄 url_parser.py     # 链接解析
-│   ├── 📄 video_parser.py   # 视频信息解析
-│   └── 📄 cookie_tester.py  # Cookie 有效性测试
+├── 📂 app/                   # Python 数据层
+│   ├── 📄 config.py          # 全局常量与路径
+│   ├── 📄 database.py        # 数据库初始化
+│   ├── 📄 models.py          # 数据模型
+│   └── 📄 repositories.py    # 数据访问层
 │
-├── 📂 downloader/           # 下载引擎
-│   ├── 📄 scheduler.py      # 任务调度与并发控制
-│   ├── 📄 downloader.py     # 核心下载逻辑
-│   ├── 📄 progress_reporter.py
-│   └── 📄 constants.py      # 常量定义
+├── 📂 crawlers/              # 爬虫组件
+│   ├── 📂 signer/            # 签名算法
+│   ├── 📄 http_client.py
+│   ├── 📄 url_parser.py
+│   ├── 📄 video_parser.py
+│   └── 📄 cookie_tester.py
 │
-├── 📂 worker/               # 线程桥接
-│   ├── 📄 async_worker.py   # asyncio 事件循环线程
-│   ├── 📄 download_bridge.py
-│   ├── 📄 crawler_bridge.py
-│   └── 📄 signals.py        # Qt 信号定义
+├── 📂 downloader/            # 下载引擎
+│   ├── 📄 scheduler.py
+│   ├── 📄 downloader.py
+│   └── 📄 progress_reporter.py
 │
-├── 📂 assets/               # 应用图标
-├── 📂 tests/                # 测试套件
-├── 📂 docs/                 # 设计文档与计划
-│
-├── 📄 pyproject.toml        # 项目配置与构建工具
-├── 📄 XieFengShiYing.spec   # PyInstaller 打包配置
-├── 📄 installer.iss         # Inno Setup 安装脚本
-├── 📄 LICENSE               # MIT 许可证
-└── 📄 README.md             # 项目说明（就是这个文件）
+├── 📂 docs/                  # 设计文档与里程碑计划
+├── 📂 tests/                 # Python 测试套件（599 项）
+├── 📄 sidecar_launcher.py    # PyInstaller 入口脚本
+├── 📄 pyproject.toml
+├── 📄 installer.iss          # (旧) Inno Setup 安装脚本
+└── 📄 README.md              # 项目说明
 ```
 
 <br>

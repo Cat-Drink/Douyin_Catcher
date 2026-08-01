@@ -323,6 +323,23 @@ class TaskItemRepository:
                 (retry_count, now_iso(), item_id),
             )
 
+    def reset_for_retry(self, item_id: int) -> None:
+        """重置任务项为待下载状态（重新执行用）。
+
+        清空下载进度、失败原因、本地路径与重试计数。
+        """
+        with self._conn:
+            self._conn.execute(
+                """
+                UPDATE task_items
+                SET status = 'pending', downloaded_bytes = 0, total_bytes = 0,
+                    fail_reason = NULL, local_path = NULL, retry_count = 0,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (now_iso(), item_id),
+            )
+
     def update_url_and_type(
         self,
         item_id: int,

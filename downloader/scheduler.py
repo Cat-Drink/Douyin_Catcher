@@ -103,7 +103,9 @@ class Scheduler:
         self._semaphore = asyncio.Semaphore(self._max_concurrent)
 
         # httpx 客户端：外部注入或内部创建
+        # follow_redirects=True：抖音短链与 CDN 直链均可能返回 302，需自动跟随
         self._http_client = http_client or httpx.AsyncClient(
+            follow_redirects=True,
             timeout=httpx.Timeout(
                 connect=DEFAULT_DOWNLOAD_CONNECT_TIMEOUT,
                 read=DEFAULT_DOWNLOAD_READ_TIMEOUT,

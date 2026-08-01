@@ -1,6 +1,6 @@
 [project]
 name = "xiefeng-shiying"
-version = "0.2.2"
+version = "0.3.0"
 description = "抖音短视频（含图文、长视频）数据抓取的 Windows 桌面端应用"
 authors = [{ name = "撷风拾影 Contributors" }]
 license = { text = "MIT" }
@@ -24,6 +24,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]  # 测试中允许 assert
 "*.spec" = ["F821", "UP009"]  # PyInstaller spec 文件的全局变量与编码声明
+"backend/app.py" = ["E402"]  # 需先 sys.path.insert 再 import（PyInstaller sidecar 打包要求）
 
 [tool.black]
 line-length = 100

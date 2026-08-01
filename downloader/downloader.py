@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import sqlite3
 import time
 from collections.abc import Callable
@@ -36,6 +37,7 @@ from app.models import TaskItem, now_iso
 from app.repositories import TaskItemRepository, TaskRepository
 from downloader.constants import (
     LARGE_FILE_THRESHOLD,
+    MAX_FILENAME_BASE_LENGTH,
     MAX_SEGMENTS,
     SEGMENT_SIZE,
 )
@@ -150,6 +152,9 @@ class Downloader:
         self._task_repo = TaskRepository(conn)
         self._video_parser = video_parser
         self._cookie_repository = cookie_repository
+        # 按目标文件路径的并发锁：防止同名目标（同一视频/图集被多次下载）
+        # 并发写同一个 .part 文件导致合并阶段文件占用冲突（WinError 32）
+        self._file_locks: dict[str, asyncio.Lock] = {}
 
     # === 路径推导 ===
 
@@ -173,8 +178,11 @@ class Downloader:
     def _get_final_path(self, task_item: TaskItem, url: str, index: int | None = None) -> Path:
         """推导最终文件路径。
 
-        - video / long_video: ``{download_dir}/{aweme_id}.{ext}``
-        - image_set: ``{download_dir}/{aweme_id}/{aweme_id}_{index}.{ext}``
+        命名规范（问题归档 #4）：采用"作者名 + 源媒体标题"截取前若干字
+        作为本地文件名。
+
+        - video / long_video: ``{download_dir}/{基础名}.{ext}``
+        - image_set: ``{download_dir}/{基础名}/{基础名}-{index}.{ext}``
 
         Args:
             task_item: 任务项
@@ -186,11 +194,31 @@ class Downloader:
         """
         download_dir = self._get_download_dir(task_item)
         ext = self._extract_extension(url, task_item.type)
-        aweme_id = task_item.aweme_id or f"item_{task_item.id}"
+        base_name = self._build_base_name(task_item)
         if task_item.type == "image_set" and index is not None:
-            target_dir = download_dir / aweme_id
-            return target_dir / f"{aweme_id}_{index}{ext}"
-        return download_dir / f"{aweme_id}{ext}"
+            target_dir = download_dir / base_name
+            return target_dir / f"{base_name}-{index}{ext}"
+        return download_dir / f"{base_name}{ext}"
+
+    def _build_base_name(self, task_item: TaskItem) -> str:
+        """构建本地文件基础名：作者名 + 源媒体标题。
+
+        - 清洗 Windows 非法字符（``<>:"/\\|?*`` 及控制字符）
+        - 截取前 ``MAX_FILENAME_BASE_LENGTH`` 字
+        - 无作者/标题时回退到 ``aweme_id`` / ``item_{id}``
+
+        Args:
+            task_item: 任务项
+
+        Returns:
+            清洗截断后的基础名
+        """
+        raw = f"{task_item.author or ''}{task_item.title or ''}".strip()
+        if not raw:
+            return task_item.aweme_id or f"item_{task_item.id}"
+        cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", raw)
+        cleaned = cleaned.rstrip(" .").strip()
+        return cleaned[:MAX_FILENAME_BASE_LENGTH] or task_item.aweme_id or f"item_{task_item.id}"
 
     def _get_part_path(self, final_path: Path) -> Path:
         """推导 .part 临时文件路径。
@@ -566,11 +594,17 @@ class Downloader:
             final_path = self._get_final_path(task_item, urls[0], index=1)
             target_dir = final_path.parent
             target_dir.mkdir(parents=True, exist_ok=True)
-            return await self._download_image_set(task_item, urls, target_dir)
+            # 图集：按目标文件夹串行化，防止同名图集并发写冲突
+            lock = self._file_locks.setdefault(str(target_dir), asyncio.Lock())
+            async with lock:
+                return await self._download_image_set(task_item, urls, target_dir)
 
         final_path = self._get_final_path(task_item, task_item.url)
         final_path.parent.mkdir(parents=True, exist_ok=True)
-        return await self._download_single_file(task_item, task_item.url, final_path)
+        # 视频：按目标文件串行化，防止同名目标并发写 .part 冲突
+        lock = self._file_locks.setdefault(str(final_path), asyncio.Lock())
+        async with lock:
+            return await self._download_single_file(task_item, task_item.url, final_path)
 
     async def _download_single_file(
         self,

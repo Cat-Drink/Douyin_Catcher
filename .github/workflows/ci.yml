@@ -1,20 +1,14 @@
 # CI：代码质量与单元测试
 #
 # 触发：push 到 master / PR 到 master
-# 内容：ruff 检查 + black 格式校验 + 单元测试（排除 e2e）+ 覆盖率上传 Codecov
+# 内容：ruff 检查 + black 格式校验 + 前端 TypeScript 检查 + 单元测试 + 覆盖率
 #
 # 设计要点：
 #   - Python 3.11 单版本（pyproject.toml requires-python >=3.11）
-#   - windows-latest runner（PySide6 桌面 GUI 应用，Windows 原生支持 Qt 测试）
-#   - 用 -o addopts="" 清空 pyproject.toml 的 addopts，避免 e2e marker 冲突，
+#   - windows-latest runner
+#   - 用 -o addopts="" 清空 pyproject.toml 的 addopts，
 #     覆盖率由命令行显式传参
-#   - 排除 tests/test_e2e（需真实 Cookie + 抖音网络访问，仅本地手动运行）
 #   - Codecov tokenless 上传（公开仓库，无需配 secret）
-#
-# 历史：
-#   v0.2.1：首次尝试 ubuntu-latest，但 PySide6 在 Linux 无头环境需要
-#   libEGL/libGL/xvfb 等系统依赖，经 3 轮修复仍不稳定，最终切换至 windows-latest。
-#   Windows runner 与开发环境一致，Qt 测试开箱即用。
 
 name: CI
 
@@ -28,11 +22,6 @@ on:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
-
-env:
-  QT_QPA_PLATFORM: windows
-  PYTHONFAULTHANDLER: 1
-  QT_QUICK_BACKEND: software
 
 jobs:
   lint-test:
@@ -61,12 +50,12 @@ jobs:
       - name: Black 格式校验
         run: black --check .
 
-      - name: 单元测试（排除 e2e）
+      - name: 单元测试
         # -o addopts="" 清空 pyproject.toml 的 addopts（含 --cov-fail-under=80），
-        # 覆盖率参数由命令行显式传入；排除需真实 Cookie 的 e2e 测试
+        # 覆盖率参数由命令行显式传入
         shell: bash
         run: |
-          pytest tests/ --ignore=tests/test_e2e \
+          pytest tests/ \
             -o addopts="" \
             --cov=. --cov-report=xml --cov-report=term-missing
 
@@ -75,3 +64,39 @@ jobs:
         with:
           files: ./coverage.xml
           fail_ci_if_error: false
+
+  frontend-check:
+    name: Frontend TypeScript Check
+    runs-on: windows-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 升级 npm（修复 optional 原生绑定缺失）
+        # Vite 7 要求 Node 20.19+ / 22.12+，Node 22 满足要求；
+        # Node 自带 npm 10 存在 optional 依赖不安装的 bug（npm/cli#4828），
+        # 会导致 @tailwindcss/oxide 的原生绑定（如 win32-x64-msvc）丢失而构建失败
+        run: npm install -g npm@11
+
+      - name: 安装前端依赖
+        run: |
+          cd frontend
+          npm ci
+
+      - name: TypeScript 类型检查
+        run: |
+          cd frontend
+          npx tsc --noEmit
+
+      - name: 前端构建
+        run: |
+          cd frontend
+          npm run build

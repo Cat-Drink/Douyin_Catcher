@@ -1,0 +1,90 @@
+use std::sync::Mutex;
+
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::TrayIconBuilder,
+    Manager,
+};
+use tauri_plugin_shell::process::CommandChild;
+use tauri_plugin_shell::ShellExt;
+
+/// 持有 sidecar 子进程句柄
+///
+/// `CommandChild` 内部持有 stdin 管道写端。必须让其存活到应用退出：
+/// - 若在 setup 中直接丢弃，stdin 会立即 EOF，sidecar 的退出监听线程
+///   会立刻终止后端；
+/// - 应用退出时借此句柄 kill 引导进程并关闭管道，后端随 EOF 一并退出，
+///   避免 backend-sidecar 进程残留占用 18989 端口。
+struct SidecarChild(Mutex<Option<CommandChild>>);
+
+/// 打开侧边栏链接（在默认浏览器中打开）
+#[tauri::command]
+fn open_link(url: String) -> Result<(), String> {
+    open::that(&url).map_err(|e| format!("打开链接失败: {}", e))
+}
+
+/// 获取应用版本号
+#[tauri::command]
+fn get_app_version() -> String {
+    "0.3.0".to_string()
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .setup(|app| {
+            // 构建托盘菜单
+            let show_item = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+
+            // 构建托盘图标
+            let _tray = TrayIconBuilder::new()
+                .menu(&menu)
+                .tooltip("撷风拾影")
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .build(app)?;
+
+            // 启动 Python sidecar
+            let sidecar_command = app.shell().sidecar("backend-sidecar")
+                .map_err(|e| e.to_string())?;
+            let (mut _rx, child) = sidecar_command
+                .args(&["--host", "127.0.0.1", "--port", "18989"])
+                .spawn()
+                .map_err(|e| e.to_string())?;
+            // 句柄存入托管状态，保持 stdin 管道存活并随应用生命周期退出
+            app.manage(SidecarChild(Mutex::new(Some(child))));
+
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![open_link, get_app_version])
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // 退出时终止 sidecar（kill 引导进程 + 关闭 stdin 管道，后端随 EOF 退出）
+            if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+                if let Some(state) = app.try_state::<SidecarChild>() {
+                    if let Some(child) = state.0.lock().unwrap().take() {
+                        let _ = child.kill();
+                    }
+                }
+            }
+        });
+}

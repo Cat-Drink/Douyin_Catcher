@@ -1,9 +1,11 @@
 -r requirements.txt
+
+# 代码质量
+ruff
+black
+
+# 测试
 pytest
 pytest-asyncio
 pytest-cov
-pytest-qt
-vcrpy
 respx
-ruff
-black
