@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 PROJECT_ROOT = Path(__file__).parent.parent
 
 
@@ -27,9 +26,9 @@ def test_signer_vector_provenance_is_documented() -> None:
 
 
 def test_code_origin_audit_covers_high_risk_files() -> None:
-    text = (
-        PROJECT_ROOT / "docs" / "compliance" / "v0.3.0-code-origin-audit.md"
-    ).read_text(encoding="utf-8")
+    text = (PROJECT_ROOT / "docs" / "compliance" / "v0.3.0-code-origin-audit.md").read_text(
+        encoding="utf-8"
+    )
     for path in (
         "crawlers/signer/xbogus.py",
         "crawlers/signer/abogus.py",

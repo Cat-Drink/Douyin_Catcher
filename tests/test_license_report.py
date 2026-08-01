@@ -5,7 +5,6 @@ from pathlib import Path
 
 from scripts.generate_license_report import build_report
 
-
 PROJECT_ROOT = Path(__file__).parent.parent
 
 
