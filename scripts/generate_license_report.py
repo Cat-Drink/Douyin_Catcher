@@ -91,8 +91,7 @@ def build_report(root: Path, generated_at: str | None = None) -> str:
     ]
     for dependency in python_dependencies:
         lines.append(
-            f"| `{dependency}` | 需人工核实（从 pip show 或包元数据确认）"
-            " | `requirements.txt` |"
+            f"| `{dependency}` | 需人工核实（从 pip show 或包元数据确认） | `requirements.txt` |"
         )
     if not python_dependencies:
         lines.append("| （未发现） | — | `requirements.txt` |")
