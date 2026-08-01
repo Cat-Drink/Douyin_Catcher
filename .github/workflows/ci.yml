@@ -73,12 +73,18 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 设置 Node.js
+      - name: 设置 Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+
+      - name: 升级 npm（修复 optional 原生绑定缺失）
+        # Vite 7 要求 Node 20.19+ / 22.12+，Node 22 满足要求；
+        # Node 自带 npm 10 存在 optional 依赖不安装的 bug（npm/cli#4828），
+        # 会导致 @tailwindcss/oxide 的原生绑定（如 win32-x64-msvc）丢失而构建失败
+        run: npm install -g npm@11
 
       - name: 安装前端依赖
         run: |
