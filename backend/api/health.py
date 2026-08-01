@@ -2,6 +2,7 @@
 
 提供服务健康检查和就绪状态，供 Tauri 与前端确认 sidecar 是否可用。
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter

@@ -2,12 +2,12 @@
 
 把下载进度、解析进度、状态变化推送给前端。
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-from collections.abc import AsyncGenerator
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -72,9 +72,7 @@ async def websocket_endpoint(ws: WebSocket):
 
         # 启动进度推送任务（如果调度器存在）
         stop_event = asyncio.Event()
-        progress_task = asyncio.create_task(
-            _push_progress_updates(ws, stop_event)
-        )
+        progress_task = asyncio.create_task(_push_progress_updates(ws, stop_event))
 
         # 监听前端消息
         while True:
@@ -84,10 +82,12 @@ async def websocket_endpoint(ws: WebSocket):
                 if msg.get("type") == "ping":
                     await ws.send_json({"type": "pong"})
                 elif msg.get("type") == "subscribe":
-                    await ws.send_json({
-                        "type": "subscribed",
-                        "channel": msg.get("channel", "all"),
-                    })
+                    await ws.send_json(
+                        {
+                            "type": "subscribed",
+                            "channel": msg.get("channel", "all"),
+                        }
+                    )
             except (json.JSONDecodeError, KeyError):
                 await ws.send_json({"type": "error", "message": "无效的消息格式"})
 
@@ -119,20 +119,24 @@ async def _push_progress_updates(ws: WebSocket, stop_event: asyncio.Event) -> No
                             progress = 0.0
                             if item.total_bytes > 0:
                                 progress = (item.downloaded_bytes / item.total_bytes) * 100
-                            updates.append({
-                                "task_item_id": item.id,
-                                "downloaded_bytes": item.downloaded_bytes,
-                                "total_bytes": item.total_bytes,
-                                "progress": round(progress, 1),
-                                "status": item.status,
-                                "aweme_id": item.aweme_id,
-                            })
+                            updates.append(
+                                {
+                                    "task_item_id": item.id,
+                                    "downloaded_bytes": item.downloaded_bytes,
+                                    "total_bytes": item.total_bytes,
+                                    "progress": round(progress, 1),
+                                    "status": item.status,
+                                    "aweme_id": item.aweme_id,
+                                }
+                            )
                     if updates:
-                        await ws.send_json({
-                            "type": "progress",
-                            "updates": updates,
-                            "timestamp": __import__("datetime").datetime.now().isoformat(),
-                        })
+                        await ws.send_json(
+                            {
+                                "type": "progress",
+                                "updates": updates,
+                                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                            }
+                        )
         except Exception:
             pass
         await asyncio.sleep(1)

@@ -2,6 +2,7 @@
 
 全局共享的单例实例，供 app.py 和各 API 路由模块导入。
 """
+
 from __future__ import annotations
 
 import asyncio

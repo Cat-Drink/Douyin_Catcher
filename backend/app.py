@@ -3,10 +3,10 @@
 将现有 Python 爬虫/下载/数据库能力暴露为 REST API + WebSocket，
 供 Tauri 前端调用。使用 lifespan 管理启动/关闭生命周期。
 """
+
 from __future__ import annotations
 
 import contextlib
-import logging
 import os
 import sys
 from collections.abc import AsyncGenerator
@@ -22,14 +22,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import config, database
 from app.logger import get_logger, setup_logger
-from backend.state import ctx
-
 from backend.api import config as config_router
 from backend.api import cookie as cookie_router
 from backend.api import crawler as crawler_router
 from backend.api import download as download_router
 from backend.api import health as health_router
 from backend.api import ws as ws_router
+from backend.state import ctx
 
 
 @asynccontextmanager
@@ -54,6 +53,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         TaskItemRepository,
         TaskRepository,
     )
+
     ctx.task_repo = TaskRepository(ctx.conn)
     ctx.task_item_repo = TaskItemRepository(ctx.conn)
     ctx.cookie_repo = CookieRepository(ctx.conn)
@@ -81,7 +81,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     ctx.scheduler = Scheduler(
         conn=ctx.conn,
         http_client=None,
-        on_item_completed=None,      # 后续通过 WebSocket 通知
+        on_item_completed=None,  # 后续通过 WebSocket 通知
         on_item_failed=None,
         on_progress=None,
         video_parser=ctx.video_parser,
@@ -132,4 +132,5 @@ app.include_router(ws_router.router, prefix="/api", tags=["ws"])
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("backend.app:app", host="127.0.0.1", port=18989, reload=True)

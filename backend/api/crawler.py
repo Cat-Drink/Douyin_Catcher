@@ -2,6 +2,7 @@
 
 暴露链接解析、主页抓取、预览等接口。
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
@@ -17,12 +18,14 @@ router = APIRouter()
 
 class ParseRequest(BaseModel):
     """解析请求。"""
+
     urls: list[str]
     task_id: int | None = None
 
 
 class ParsedURLResponse(BaseModel):
     """解析结果响应。"""
+
     url: str
     title: str | None = None
     author: str | None = None
@@ -38,6 +41,7 @@ class ParsedURLResponse(BaseModel):
 
 class FetchHomeRequest(BaseModel):
     """主页抓取请求。"""
+
     url: str
     max_items: int = 30
     offset: int = 0
@@ -45,6 +49,7 @@ class FetchHomeRequest(BaseModel):
 
 class FetchHomeResponse(BaseModel):
     """主页抓取结果。"""
+
     items: list[ParsedURLResponse]
     has_more: bool = False
     total: int | None = None
@@ -82,38 +87,48 @@ async def parse_urls(req: ParseRequest):
             if aweme_id and ctx.video_parser is not None:
                 try:
                     video_info = await ctx.video_parser.parse_video(aweme_id, cookie)
-                    results.append(ParsedURLResponse(
-                        url=url,
-                        title=video_info.title,
-                        author=video_info.author,
-                        type=video_info.type,
-                        aweme_id=aweme_id,
-                        cover_url=video_info.cover_url,
-                        duration=video_info.duration,
-                        image_count=len(video_info.image_urls) if video_info.image_urls else None,
-                        no_watermark_url=video_info.no_watermark_url,
-                        image_urls=video_info.image_urls or None,
-                    ))
+                    results.append(
+                        ParsedURLResponse(
+                            url=url,
+                            title=video_info.title,
+                            author=video_info.author,
+                            type=video_info.type,
+                            aweme_id=aweme_id,
+                            cover_url=video_info.cover_url,
+                            duration=video_info.duration,
+                            image_count=(
+                                len(video_info.image_urls) if video_info.image_urls else None
+                            ),
+                            no_watermark_url=video_info.no_watermark_url,
+                            image_urls=video_info.image_urls or None,
+                        )
+                    )
                 except Exception as ve:
                     # VideoParser 失败，回退到基本解析信息
-                    results.append(ParsedURLResponse(
+                    results.append(
+                        ParsedURLResponse(
+                            url=url,
+                            type=parsed_url.type,
+                            aweme_id=aweme_id,
+                            error=f"视频详情解析失败: {ve}",
+                        )
+                    )
+            else:
+                # 主页链接或其他类型
+                results.append(
+                    ParsedURLResponse(
                         url=url,
                         type=parsed_url.type,
                         aweme_id=aweme_id,
-                        error=f"视频详情解析失败: {ve}",
-                    ))
-            else:
-                # 主页链接或其他类型
-                results.append(ParsedURLResponse(
-                    url=url,
-                    type=parsed_url.type,
-                    aweme_id=aweme_id,
-                ))
+                    )
+                )
         except Exception as e:
-            results.append(ParsedURLResponse(
-                url=url,
-                error=str(e),
-            ))
+            results.append(
+                ParsedURLResponse(
+                    url=url,
+                    error=str(e),
+                )
+            )
     return results
 
 
@@ -149,16 +164,18 @@ async def fetch_home(req: FetchHomeRequest):
         # 4. 消费异步迭代器
         items = []
         async for post in ctx.user_home_crawler.fetch_user_posts(sec_user_id, filters, cookie):
-            items.append(ParsedURLResponse(
-                url=f"https://www.douyin.com/video/{post.aweme_id}",
-                title=post.title,
-                author=post.author,
-                type=post.type,
-                aweme_id=post.aweme_id,
-                cover_url=post.cover_url,
-                duration=post.duration,
-                image_count=post.image_count,
-            ))
+            items.append(
+                ParsedURLResponse(
+                    url=f"https://www.douyin.com/video/{post.aweme_id}",
+                    title=post.title,
+                    author=post.author,
+                    type=post.type,
+                    aweme_id=post.aweme_id,
+                    cover_url=post.cover_url,
+                    duration=post.duration,
+                    image_count=post.image_count,
+                )
+            )
             if len(items) >= req.max_items:
                 break
 
@@ -170,7 +187,7 @@ async def fetch_home(req: FetchHomeRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/preview", response_model=ParsedURLResponse)
@@ -206,7 +223,12 @@ async def preview_url(url: str):
                     image_urls=video_info.image_urls or None,
                 )
             except Exception as ve:
-                return ParsedURLResponse(url=url, type=parsed_url.type, aweme_id=aweme_id, error=str(ve))
+                return ParsedURLResponse(
+                    url=url,
+                    type=parsed_url.type,
+                    aweme_id=aweme_id,
+                    error=str(ve),
+                )
 
         return ParsedURLResponse(url=url, type=parsed_url.type, aweme_id=aweme_id)
     except Exception as e:

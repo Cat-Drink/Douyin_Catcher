@@ -2,12 +2,13 @@
 
 暴露任务列表、启动下载、暂停/恢复/重试、清除已完成等接口。
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.models import SourceType, Task, TaskItem, TaskItemStatus, TaskStatus, now_iso
+from app.models import Task, TaskItem, TaskItemStatus, TaskStatus
 from backend.state import ctx
 
 router = APIRouter()
@@ -18,6 +19,7 @@ router = APIRouter()
 
 class StartDownloadRequest(BaseModel):
     """启动下载请求。"""
+
     source_type: str = "single"
     source_url: str | None = None
     items: list[dict] | None = None  # 批量下载时传入解析后的 items
@@ -26,6 +28,7 @@ class StartDownloadRequest(BaseModel):
 
 class TaskResponse(BaseModel):
     """任务列表响应项。"""
+
     id: int
     source_type: str
     source_url: str | None
@@ -39,6 +42,7 @@ class TaskResponse(BaseModel):
 
 class TaskItemResponse(BaseModel):
     """任务项响应。"""
+
     id: int | None
     task_id: int
     aweme_id: str | None
@@ -71,17 +75,19 @@ async def list_tasks():
         task = ctx.task_repo.get(tid)
         if task is None:
             continue
-        tasks.append(TaskResponse(
-            id=task.id,
-            source_type=task.source_type,
-            source_url=task.source_url,
-            status=task.status,
-            total_items=task.total_items,
-            completed_items=task.completed_items,
-            created_at=task.created_at,
-            updated_at=task.updated_at,
-            download_dir=task.download_dir,
-        ))
+        tasks.append(
+            TaskResponse(
+                id=task.id,
+                source_type=task.source_type,
+                source_url=task.source_url,
+                status=task.status,
+                total_items=task.total_items,
+                completed_items=task.completed_items,
+                created_at=task.created_at,
+                updated_at=task.updated_at,
+                download_dir=task.download_dir,
+            )
+        )
     return tasks
 
 
@@ -103,7 +109,11 @@ async def list_task_items(task_id: int):
             status=item.status,
             downloaded_bytes=item.downloaded_bytes,
             total_bytes=item.total_bytes,
-            progress=(item.downloaded_bytes / max(item.total_bytes, 1)) * 100 if item.total_bytes > 0 else 0.0,
+            progress=(
+                (item.downloaded_bytes / max(item.total_bytes, 1)) * 100
+                if item.total_bytes > 0
+                else 0.0
+            ),
             cover_url=item.cover_url,
             fail_reason=item.fail_reason,
             local_path=item.local_path,
@@ -175,7 +185,11 @@ async def start_download(req: StartDownloadRequest):
                 author=item_data.get("author"),
                 type=item_type,
                 cover_url=item_data.get("cover_url"),
-                image_count=len(image_urls) if item_type == "image_set" and image_urls else item_data.get("image_count"),
+                image_count=(
+                    len(image_urls)
+                    if item_type == "image_set" and image_urls
+                    else item_data.get("image_count")
+                ),
                 status=TaskItemStatus.PENDING.value,
             )
             item_id = ctx.task_item_repo.create(task_item)

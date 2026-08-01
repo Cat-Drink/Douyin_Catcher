@@ -2,13 +2,13 @@
 
 暴露 Cookie 的增删查改、测试等功能。
 """
+
 from __future__ import annotations
 
-from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.models import Cookie, now_iso
+from app.models import Cookie
 from backend.state import ctx
 
 router = APIRouter()
@@ -19,6 +19,7 @@ router = APIRouter()
 
 class CookieResponse(BaseModel):
     """Cookie 响应。"""
+
     id: int | None
     content: str
     label: str | None
@@ -31,12 +32,14 @@ class CookieResponse(BaseModel):
 
 class AddCookieRequest(BaseModel):
     """添加 Cookie 请求。"""
+
     content: str
     label: str | None = None
 
 
 class TestCookieResponse(BaseModel):
     """Cookie 测试结果。"""
+
     id: int
     is_valid: bool
     error_message: str = ""
@@ -121,12 +124,14 @@ async def test_all_cookies():
         result = await ctx.cookie_tester.test_cookie(cookie.content)
         new_status = "valid" if result.is_valid else "invalid"
         ctx.cookie_repo.update_status(cookie.id, new_status)
-        results.append(TestCookieResponse(
-            id=cookie.id,
-            is_valid=result.is_valid,
-            error_message=result.error_message,
-            user_nickname=result.user_nickname,
-        ))
+        results.append(
+            TestCookieResponse(
+                id=cookie.id,
+                is_valid=result.is_valid,
+                error_message=result.error_message,
+                user_nickname=result.user_nickname,
+            )
+        )
     return results
 
 

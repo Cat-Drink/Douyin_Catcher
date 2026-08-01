@@ -2,6 +2,7 @@
 
 提供下载目录、并发数、分块大小、元数据格式等配置读写能力。
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
@@ -17,6 +18,7 @@ router = APIRouter()
 
 class ConfigResponse(BaseModel):
     """配置响应。"""
+
     download_dir: str
     concurrency: int
     chunk_size: int
@@ -26,6 +28,7 @@ class ConfigResponse(BaseModel):
 
 class UpdateConfigRequest(BaseModel):
     """更新配置请求。"""
+
     download_dir: str | None = None
     concurrency: int | None = None
     chunk_size: int | None = None

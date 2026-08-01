@@ -2,13 +2,14 @@
 
 被 PyInstaller 打包为单一可执行文件，供 Tauri 桌面壳作为 sidecar 启动。
 """
+
 import os
 import sys
 import threading
 
-import backend.app  # noqa: F401  让 PyInstaller 静态分析收集完整依赖（含 fastapi/sqlite3 等）
-
 import uvicorn
+
+import backend.app  # noqa: F401  让 PyInstaller 静态分析收集完整依赖（含 fastapi/sqlite3 等）
 
 
 def _watch_stdin_and_exit() -> None:
