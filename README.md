@@ -47,7 +47,7 @@
 
 > **撷风拾影** —— 名字取自"撷取风中流转的光影"，寓意捕捉互联网上转瞬即逝的精彩内容。  
 > 一款面向非技术用户的 Windows 桌面端应用，支持抖音短视频、图文、长视频的数据抓取与下载。  
-> 核心算法（签名、解析、下载引擎）均为 **自研组件**，参考 [Evil0ctal/Douyin_TikTok_Download_API](https://github.com/Evil0ctal/Douyin_TikTok_Download_API) 的设计思路，但 **不直接复用其代码**，有效降低外部依赖风险。
+> 参考 [Evil0ctal/Douyin_TikTok_Download_API](https://github.com/Evil0ctal/Douyin_TikTok_Download_API) 的设计思路，但 **不直接复用其代码**，有效降低外部依赖风险。
 
 ---
 
