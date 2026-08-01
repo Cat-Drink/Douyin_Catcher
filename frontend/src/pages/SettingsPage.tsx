@@ -57,7 +57,7 @@ export default function SettingsPage() {
   };
 
   const handleOpenRepo = () => {
-    openExternal("https://github.com/Evil0ctal/Douyin_TikTok_Download_API");
+    openExternal("https://github.com/Cat-Drink/Douyin_Catcher");
   };
 
   if (loading) {
