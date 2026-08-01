@@ -2,9 +2,9 @@
 
 ## 参考项目
 
-本项目在公开 API 调研、功能设计和签名原理分析阶段参考了 [`Evil0ctal/Douyin_TikTok_Download_API`](https://github.com/Evil0ctal/Douyin_TikTok_Download_API)。该项目仓库页面声明使用 [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0)。
+本项目在公开 API 调研、功能设计和签名原理分析阶段参考了 [`Evil0ctal/Douyin_TikTok_Download_API`](https://github.com/Evil0ctal/Douyin_TikTok_Download_API)。该项目仓库页面声明使用 [Apache License 2.0 (Apache-2.0)](https://www.apache.org/licenses/LICENSE-2.0)。
 
-本项目的参考范围是公开的设计思路、接口事实和公开原理分析。经当前仓库静态审查，本项目未将该项目作为运行时依赖，未导入其包，未复制其源代码目录，也未 vendoring 其源代码。本说明不表示上游作者对本项目提供授权、审阅或背书。
+本项目的参考范围是公开的设计思路、接口事实和公开原理分析。经当前仓库静态审查，本项目未直接复制其代码，未将该项目作为运行时依赖，未导入其包，未复制其源代码目录，也未 vendoring 其源代码。本说明不表示上游作者对本项目提供授权、审阅或背书。
 
 ## 许可证边界
 
