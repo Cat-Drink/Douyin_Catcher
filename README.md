@@ -461,7 +461,7 @@ flowchart TB
 
 <br>
 
-[查看 LICENSE 文件](LICENSE) ·
+[查看 LICENSE 文件](LICENSE) · [第三方归属与许可证说明](THIRD-PARTY-NOTICES.md)
 [GitHub 仓库](https://github.com/Cat-Drink/Douyin_Catcher) ·
 [提交 Issue](https://github.com/Cat-Drink/Douyin_Catcher/issues)
 
