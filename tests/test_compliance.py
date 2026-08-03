@@ -16,7 +16,8 @@ def test_upstream_notice_defines_license_boundary() -> None:
     assert "Evil0ctal/Douyin_TikTok_Download_API" in text
     assert "Apache-2.0" in text
     assert "未直接复制" in text
-    assert "MIT" in text
+    # v0.3.0 起：项目协议由 MIT 切换为 Apache License 2.0
+    assert "Apache License 2.0" in text
 
 
 def test_signer_vector_provenance_is_documented() -> None:

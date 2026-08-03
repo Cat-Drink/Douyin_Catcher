@@ -18,7 +18,7 @@
     <img src="https://img.shields.io/badge/Python-3.11+-4B8BBE?style=flat-square&logo=python&logoColor=white" alt="Python">
     <img src="https://img.shields.io/badge/UI-Tauri%20%2F%20React-41CD52?style=flat-square&logo=react&logoColor=white" alt="Tauri React">
     <a href="LICENSE">
-      <img src="https://img.shields.io/badge/许可证-MIT-EB9E5C?style=flat-square" alt="MIT">
+      <img src="https://img.shields.io/badge/许可证-Apache%202.0-EB9E5C?style=flat-square" alt="Apache 2.0">
     </a>
     <img src="https://img.shields.io/badge/平台-Windows-0078D4?style=flat-square&logo=windows&logoColor=white" alt="Windows">
   </p>
@@ -457,11 +457,11 @@ flowchart TB
 
 <div align="center">
 
-本项目基于 **MIT 许可证** 开源。
+本项目基于 **Apache License 2.0** 开源。
 
 <br>
 
-[查看 LICENSE 文件](LICENSE) · [第三方归属与许可证说明](THIRD-PARTY-NOTICES.md)
+[查看 LICENSE 文件](LICENSE) · [第三方归属与许可证说明](THIRD-PARTY-NOTICES.md) · [许可证迁移说明 (MIT → Apache 2.0)](docs/compliance/v0.3.0-license-migration.md)
 [GitHub 仓库](https://github.com/Cat-Drink/Douyin_Catcher) ·
 [提交 Issue](https://github.com/Cat-Drink/Douyin_Catcher/issues)
 
