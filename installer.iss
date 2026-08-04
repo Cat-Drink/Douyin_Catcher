@@ -17,6 +17,11 @@
 ;   - 卸载只清理 {app}（Program Files），不清理 %APPDATA%/XieFengShiYing/（用户数据保留）
 ;   - AppId 固定 GUID，发布后不可更改（影响升级识别）
 ;   - 仅支持 Windows x64
+;
+; 协议说明::
+;   - v0.3.0 起，本项目协议由 MIT 切换为 Apache License 2.0。
+;   - 详见 LICENSE、THIRD-PARTY-NOTICES.md 与
+;     docs/compliance/v0.3.0-license-migration.md。
 ; ==============================================================================
 
 	#define MyAppName "撷风拾影"
