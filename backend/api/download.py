@@ -255,6 +255,32 @@ async def resume_all():
     return {"message": "所有暂停任务已恢复"}
 
 
+@router.delete("/tasks/items/{item_id}")
+async def delete_task_item(item_id: int):
+    """删除单个下载任务项。
+
+    若该项所属 Task 下已无剩余 TaskItem，则一并清理该 Task。
+    """
+    if ctx.task_item_repo is None or ctx.task_repo is None:
+        raise HTTPException(status_code=503, detail="Service not ready")
+
+    item = ctx.task_item_repo.get(item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"任务项 {item_id} 不存在")
+
+    task_id = item.task_id
+
+    # 删除该 TaskItem
+    ctx.task_item_repo.delete(item_id)
+
+    # 检查所属 Task 下是否还有剩余项，若无则清理 Task
+    remaining = ctx.task_item_repo.get_by_task(task_id)
+    if not remaining:
+        ctx.task_repo.delete(task_id)
+
+    return {"message": f"任务项 {item_id} 已删除"}
+
+
 @router.delete("/tasks/{task_id}")
 async def delete_task(task_id: int):
     """删除任务及其所有项。"""
