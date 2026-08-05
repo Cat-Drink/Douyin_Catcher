@@ -74,7 +74,7 @@ jobs:
           echo "正在将版本号 $VERSION 注入各源码文件..."
           sed -i "s/\"version\": \"[0-9.]*\"/\"version\": \"$VERSION\"/" frontend/src-tauri/tauri.conf.json
           sed -i "s/\"version\": \"[0-9.]*\"/\"version\": \"$VERSION\"/" frontend/package.json
-          sed -i "s/version = \"[0-9.]*\"/version = \"$VERSION\"/" frontend/src-tauri/Cargo.toml
+          sed -i "s/^version = \"[0-9.]*\"/version = \"$VERSION\"/" frontend/src-tauri/Cargo.toml
           sed -i "s/version = \"[0-9.]*\"/version = \"$VERSION\"/" pyproject.toml
           sed -i "s/version=\"[0-9.]*\"/version=\"$VERSION\"/" backend/app.py
           sed -i "s/\"version\": \"[0-9.]*\"/\"version\": \"$VERSION\"/" backend/api/health.py
