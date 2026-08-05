@@ -6,13 +6,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import os
 import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import datetime
 
 # 确保项目根目录在 sys.path 中，以便 import app/ crawlers/ downloader/
 _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -80,68 +78,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # 5. 下载调度器
     from downloader.scheduler import Scheduler
 
-    def _on_item_completed(task_item_id: int) -> None:
-        """下载完成回调：记录日志并触发 WebSocket 广播。"""
-        log.info("任务项 %d 下载完成", task_item_id)
-        asyncio.create_task(
-            ws_router.manager.broadcast(
-                {
-                    "type": "item_completed",
-                    "task_item_id": task_item_id,
-                    "timestamp": datetime.now().isoformat(),
-                }
-            )
-        )
-
-    def _on_item_failed(task_item_id: int, fail_reason: str) -> None:
-        """下载失败回调：记录日志并触发 WebSocket 广播。"""
-        log.warning("任务项 %d 下载失败: %s", task_item_id, fail_reason)
-        asyncio.create_task(
-            ws_router.manager.broadcast(
-                {
-                    "type": "item_failed",
-                    "task_item_id": task_item_id,
-                    "fail_reason": fail_reason,
-                    "timestamp": datetime.now().isoformat(),
-                }
-            )
-        )
-
-    def _on_progress(updates: list) -> None:
-        """进度回调：通过 WebSocket 广播进度更新。"""
-        if not updates:
-            return
-        asyncio.create_task(
-            ws_router.manager.broadcast(
-                {
-                    "type": "progress",
-                    "updates": [
-                        {
-                            "task_item_id": update.task_item_id,
-                            "downloaded_bytes": update.downloaded_bytes,
-                            "total_bytes": update.total_bytes,
-                            "progress": (
-                                100.0
-                                if update.status == "completed"
-                                else round(
-                                    (update.downloaded_bytes / max(update.total_bytes, 1)) * 100, 1
-                                )
-                            ),
-                            "status": update.status,
-                        }
-                        for update in updates
-                    ],
-                    "timestamp": datetime.now().isoformat(),
-                }
-            )
-        )
-
     ctx.scheduler = Scheduler(
         conn=ctx.conn,
         http_client=None,
-        on_item_completed=_on_item_completed,
-        on_item_failed=_on_item_failed,
-        on_progress=_on_progress,
+        on_item_completed=None,  # 后续通过 WebSocket 通知
+        on_item_failed=None,
+        on_progress=None,
         video_parser=ctx.video_parser,
         cookie_repository=ctx.cookie_repo,
     )

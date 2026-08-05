@@ -16,13 +16,13 @@ export default function DownloadPage() {
   const {
     items, loading, error,
     loadTasks, applyProgressUpdate,
-    pauseItem, resumeItem, retryItem, retryAllFailed, pauseAll, resumeAll, clearCompleted,
+    pauseItem, resumeItem, retryItem, pauseAll, resumeAll, clearCompleted,
   } = useTaskStore();
   const { addToast } = useToastStore();
 
-  const handleDeleteItem = async (itemId: number) => {
+  const handleDeleteItem = async (taskId: number) => {
     try {
-      await api.deleteTaskItem(itemId);
+      await api.deleteTask(taskId);
       addToast("任务已删除", "success");
       loadTasks();
     } catch (e) {
@@ -99,11 +99,6 @@ export default function DownloadPage() {
         <Button variant="ghost" size="sm" onClick={pauseAll}>全部暂停</Button>
         <Button variant="ghost" size="sm" onClick={resumeAll}>全部开始</Button>
         <Button variant="ghost" size="sm" className="text-error" onClick={clearCompleted}>清空已完成</Button>
-        {stats.failed > 0 && (
-          <Button variant="ghost" size="sm" className="text-warning" onClick={retryAllFailed}>
-            全部失败重试
-          </Button>
-        )}
         <div className="flex-1" />
         <div className="relative w-48">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-disabled" />
