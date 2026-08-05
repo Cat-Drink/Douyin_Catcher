@@ -65,6 +65,8 @@ interface TaskStore {
   resumeItem: (itemId: number) => Promise<void>;
   /** 重新执行单项 */
   retryItem: (itemId: number) => Promise<void>;
+  /** 全部失败重试 */
+  retryAllFailed: () => Promise<void>;
   /** 全部暂停 */
   pauseAll: () => Promise<void>;
   /** 全部恢复 */
@@ -167,6 +169,15 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       await get().loadTasks();
     } catch (e) {
       console.error("重新执行失败:", e);
+    }
+  },
+
+  retryAllFailed: async () => {
+    try {
+      await api.retryAllFailed();
+      await get().loadTasks();
+    } catch (e) {
+      console.error("全部失败重试失败:", e);
     }
   },
 
