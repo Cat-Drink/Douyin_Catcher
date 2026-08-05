@@ -8,7 +8,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.models import Cookie
+from app.models import Cookie, now_iso
 from backend.state import ctx
 
 router = APIRouter()
@@ -101,6 +101,7 @@ async def test_cookie(cookie_id: int):
     # 更新 Cookie 状态
     new_status = "valid" if result.is_valid else "invalid"
     ctx.cookie_repo.update_status(cookie_id, new_status)
+    ctx.cookie_repo.update_last_used(cookie_id, now_iso())
 
     return TestCookieResponse(
         id=cookie_id,
@@ -124,6 +125,7 @@ async def test_all_cookies():
         result = await ctx.cookie_tester.test_cookie(cookie.content)
         new_status = "valid" if result.is_valid else "invalid"
         ctx.cookie_repo.update_status(cookie.id, new_status)
+        ctx.cookie_repo.update_last_used(cookie.id, now_iso())
         results.append(
             TestCookieResponse(
                 id=cookie.id,
