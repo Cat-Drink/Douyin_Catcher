@@ -110,13 +110,9 @@ async def list_task_items(task_id: int):
             downloaded_bytes=item.downloaded_bytes,
             total_bytes=item.total_bytes,
             progress=(
-                100.0
-                if item.status == "completed"
-                else (
-                    (item.downloaded_bytes / max(item.total_bytes, 1)) * 100
-                    if item.total_bytes > 0
-                    else 0.0
-                )
+                (item.downloaded_bytes / max(item.total_bytes, 1)) * 100
+                if item.total_bytes > 0
+                else 0.0
             ),
             cover_url=item.cover_url,
             fail_reason=item.fail_reason,
@@ -241,32 +237,6 @@ async def retry_download(task_item_id: int):
     return {"message": f"任务项 {task_item_id} 已重新入队"}
 
 
-@router.post("/retry-all")
-async def retry_all_failed():
-    """将所有失败状态的任务项重新入队。
-
-    遍历所有 failed 状态的任务项，逐个重置为 pending 后重新加入下载队列。
-    """
-    if ctx.task_item_repo is None or ctx.scheduler is None:
-        raise HTTPException(status_code=503, detail="Service not ready")
-
-    failed_items = ctx.task_item_repo.get_by_status("failed")
-    if not failed_items:
-        return {"message": "没有失败任务", "retried_count": 0}
-
-    for item in failed_items:
-        if item.id is not None:
-            ctx.task_item_repo.reset_for_retry(item.id)
-
-    # 重新入队（reset_for_retry 已将状态置为 pending，不会被去重跳过）
-    ctx.scheduler.add_task_items(failed_items)
-
-    return {
-        "message": f"已重新入队 {len(failed_items)} 个失败任务",
-        "retried_count": len(failed_items),
-    }
-
-
 @router.post("/pause-all")
 async def pause_all():
     """暂停所有下载。"""
@@ -285,32 +255,6 @@ async def resume_all():
     return {"message": "所有暂停任务已恢复"}
 
 
-@router.delete("/tasks/items/{item_id}")
-async def delete_task_item(item_id: int):
-    """删除单个下载任务项。
-
-    若该项所属 Task 下已无剩余 TaskItem，则一并清理该 Task。
-    """
-    if ctx.task_item_repo is None or ctx.task_repo is None:
-        raise HTTPException(status_code=503, detail="Service not ready")
-
-    item = ctx.task_item_repo.get(item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail=f"任务项 {item_id} 不存在")
-
-    task_id = item.task_id
-
-    # 删除该 TaskItem
-    ctx.task_item_repo.delete(item_id)
-
-    # 检查所属 Task 下是否还有剩余项，若无则清理 Task
-    remaining = ctx.task_item_repo.get_by_task(task_id)
-    if not remaining:
-        ctx.task_repo.delete(task_id)
-
-    return {"message": f"任务项 {item_id} 已删除"}
-
-
 @router.delete("/tasks/{task_id}")
 async def delete_task(task_id: int):
     """删除任务及其所有项。"""
@@ -322,22 +266,12 @@ async def delete_task(task_id: int):
 
 @router.post("/clear-completed")
 async def clear_completed():
-    """清除所有已完成的任务项及空父任务。"""
-    if ctx.task_repo is None or ctx.task_item_repo is None:
+    """清除所有已完成的任务。"""
+    if ctx.task_repo is None:
         raise HTTPException(status_code=503, detail="Service not ready")
-
-    completed_items = ctx.task_item_repo.get_by_status(TaskStatus.COMPLETED.value)
-    affected_tasks: set[int] = set()
-
-    for item in completed_items:
-        if item.id is not None:
-            ctx.task_item_repo.delete(item.id)
-            affected_tasks.add(item.task_id)
-
-    # 清理没有剩余 task_items 的空父任务
-    for task_id in affected_tasks:
-        remaining = ctx.task_item_repo.get_by_task(task_id)
-        if not remaining:
-            ctx.task_repo.delete(task_id)
-
-    return {"message": f"已清除 {len(completed_items)} 个已完成任务项"}
+    # 获取所有已完成任务
+    completed = ctx.task_repo.get_by_status(TaskStatus.COMPLETED.value)
+    for task in completed:
+        if task.id is not None:
+            ctx.task_repo.delete(task.id)
+    return {"message": f"已清除 {len(completed)} 个已完成任务"}

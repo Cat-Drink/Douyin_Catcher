@@ -32,13 +32,11 @@ class ProgressUpdate:
         task_item_id: 任务项 ID
         downloaded_bytes: 已下载字节数
         total_bytes: 文件总字节数
-        status: 任务项状态，默认 "downloading"
     """
 
     task_item_id: int
     downloaded_bytes: int
     total_bytes: int
-    status: str = "downloading"
 
 
 class ProgressReporter:
@@ -75,13 +73,7 @@ class ProgressReporter:
         self._report_task: asyncio.Task[None] | None = None
         self._stopped = False
 
-    def update(
-        self,
-        task_item_id: int,
-        downloaded_bytes: int,
-        total_bytes: int,
-        status: str = "downloading",
-    ) -> None:
+    def update(self, task_item_id: int, downloaded_bytes: int, total_bytes: int) -> None:
         """更新进度（不立即触发回调，缓存到内部字典）。
 
         同一 task_item_id 多次调用只保留最新值（Queue 去重）。
@@ -90,13 +82,11 @@ class ProgressReporter:
             task_item_id: 任务项 ID
             downloaded_bytes: 已下载字节数
             total_bytes: 文件总字节数
-            status: 任务项状态，默认 "downloading"
         """
         self._latest[task_item_id] = ProgressUpdate(
             task_item_id=task_item_id,
             downloaded_bytes=downloaded_bytes,
             total_bytes=total_bytes,
-            status=status,
         )
         # 向 Queue 放入标记通知汇报协程有新数据
         with contextlib.suppress(asyncio.QueueFull):

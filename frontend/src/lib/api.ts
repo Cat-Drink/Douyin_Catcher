@@ -112,20 +112,12 @@ export async function retryDownload(taskItemId: number): Promise<{ message: stri
   return request(`/download/retry/${taskItemId}`, { method: "POST" });
 }
 
-export async function retryAllFailed(): Promise<{ message: string; retried_count: number }> {
-  return request("/download/retry-all", { method: "POST" });
-}
-
 export async function pauseAll(): Promise<{ message: string }> {
   return request("/download/pause-all", { method: "POST" });
 }
 
 export async function resumeAll(): Promise<{ message: string }> {
   return request("/download/resume-all", { method: "POST" });
-}
-
-export async function deleteTaskItem(itemId: number): Promise<{ message: string }> {
-  return request(`/download/tasks/items/${itemId}`, { method: "DELETE" });
 }
 
 export async function deleteTask(taskId: number): Promise<{ message: string }> {

@@ -94,7 +94,7 @@ export function TaskItem({ task, onPause, onResume, onRetry, onDelete }: TaskIte
         {/* 删除任务 */}
         {onDelete && (
           <button
-            onClick={() => onDelete(task.id)}
+            onClick={() => onDelete(task.taskId)}
             className="w-8 h-8 flex items-center justify-center rounded-sm text-text-secondary hover:bg-bg-hover hover:text-error transition-colors"
             title="删除任务"
           >

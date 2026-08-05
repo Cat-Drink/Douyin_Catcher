@@ -28,17 +28,6 @@ class TestProgressUpdate:
         assert update.task_item_id == 1
         assert update.downloaded_bytes == 1024
         assert update.total_bytes == 4096
-        assert update.status == "downloading"
-
-    def test_progress_update_accepts_custom_status(self) -> None:
-        """ProgressUpdate 可显式接收任务项状态。"""
-        update = ProgressUpdate(
-            task_item_id=1,
-            downloaded_bytes=1024,
-            total_bytes=4096,
-            status="completed",
-        )
-        assert update.status == "completed"
 
     def test_progress_update_is_frozen(self) -> None:
         """ProgressUpdate 是 frozen dataclass，不可修改。"""
@@ -70,25 +59,6 @@ class TestUpdateAndFlush:
         reporter = ProgressReporter(on_progress=lambda updates: calls.append(updates))
         reporter.update(1, 1024, 4096)
         assert calls == []
-
-    def test_update_accepts_status_keyword(self) -> None:
-        """update() 接受 status 关键字并构造进 ProgressUpdate。"""
-        calls: list[list[ProgressUpdate]] = []
-        reporter = ProgressReporter(on_progress=lambda updates: calls.append(updates))
-        reporter.update(1, 1024, 4096, status="completed")
-        reporter.flush()
-        assert len(calls) == 1
-        assert len(calls[0]) == 1
-        assert calls[0][0].status == "completed"
-        assert calls[0][0].task_item_id == 1
-
-    def test_update_default_status_is_downloading(self) -> None:
-        """update() 不传 status 时 ProgressUpdate.status 为 'downloading'。"""
-        calls: list[list[ProgressUpdate]] = []
-        reporter = ProgressReporter(on_progress=lambda updates: calls.append(updates))
-        reporter.update(1, 512, 2048)
-        reporter.flush()
-        assert calls[0][0].status == "downloading"
 
     def test_flush_sends_buffered_updates(self) -> None:
         """flush() 将积累的进度通过回调批量发送。"""

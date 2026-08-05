@@ -780,7 +780,6 @@ class Downloader:
                             task_item.id,
                             downloaded_bytes,
                             total_bytes,
-                            status="downloading",
                         )
                     # 检查持久化条件：5 秒 或 1MB
                     now = time.monotonic()
