@@ -268,7 +268,7 @@ def get_memory_connection() -> sqlite3.Connection:
     Returns:
         初始化完成的内存 sqlite3.Connection 连接实例
     """
-    conn = sqlite3.connect(":memory:")
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
     conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row
     init_db(conn)
