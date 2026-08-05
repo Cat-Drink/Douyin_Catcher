@@ -112,9 +112,11 @@ async def list_task_items(task_id: int):
             progress=(
                 100.0
                 if item.status == "completed"
-                else (item.downloaded_bytes / max(item.total_bytes, 1)) * 100
-                if item.total_bytes > 0
-                else 0.0
+                else (
+                    (item.downloaded_bytes / max(item.total_bytes, 1)) * 100
+                    if item.total_bytes > 0
+                    else 0.0
+                )
             ),
             cover_url=item.cover_url,
             fail_reason=item.fail_reason,
