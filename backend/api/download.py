@@ -8,7 +8,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.models import Task, TaskItem, TaskItemStatus, TaskStatus
+from app.models import Task, TaskItem, TaskItemStatus, TaskStatus, now_iso
 from backend.state import ctx
 
 router = APIRouter()
@@ -153,6 +153,7 @@ async def start_download(req: StartDownloadRequest):
             valid_cookie = ctx.cookie_repo.get_valid()
             if valid_cookie is not None:
                 cookie = valid_cookie.content
+                ctx.cookie_repo.update_last_used(valid_cookie.id, now_iso())
 
         for item_data in req.items:
             item_type = item_data.get("type", "video")
