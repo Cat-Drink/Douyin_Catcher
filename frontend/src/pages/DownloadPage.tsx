@@ -20,9 +20,9 @@ export default function DownloadPage() {
   } = useTaskStore();
   const { addToast } = useToastStore();
 
-  const handleDeleteItem = async (taskId: number) => {
+  const handleDeleteItem = async (itemId: number) => {
     try {
-      await api.deleteTask(taskId);
+      await api.deleteTaskItem(itemId);
       addToast("任务已删除", "success");
       loadTasks();
     } catch (e) {

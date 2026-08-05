@@ -120,6 +120,10 @@ export async function resumeAll(): Promise<{ message: string }> {
   return request("/download/resume-all", { method: "POST" });
 }
 
+export async function deleteTaskItem(itemId: number): Promise<{ message: string }> {
+  return request(`/download/tasks/items/${itemId}`, { method: "DELETE" });
+}
+
 export async function deleteTask(taskId: number): Promise<{ message: string }> {
   return request(`/download/tasks/${taskId}`, { method: "DELETE" });
 }
