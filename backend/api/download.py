@@ -110,7 +110,9 @@ async def list_task_items(task_id: int):
             downloaded_bytes=item.downloaded_bytes,
             total_bytes=item.total_bytes,
             progress=(
-                (item.downloaded_bytes / max(item.total_bytes, 1)) * 100
+                100.0
+                if item.status == "completed"
+                else (item.downloaded_bytes / max(item.total_bytes, 1)) * 100
                 if item.total_bytes > 0
                 else 0.0
             ),
@@ -292,12 +294,22 @@ async def delete_task(task_id: int):
 
 @router.post("/clear-completed")
 async def clear_completed():
-    """清除所有已完成的任务。"""
-    if ctx.task_repo is None:
+    """清除所有已完成的任务项及空父任务。"""
+    if ctx.task_repo is None or ctx.task_item_repo is None:
         raise HTTPException(status_code=503, detail="Service not ready")
-    # 获取所有已完成任务
-    completed = ctx.task_repo.get_by_status(TaskStatus.COMPLETED.value)
-    for task in completed:
-        if task.id is not None:
-            ctx.task_repo.delete(task.id)
-    return {"message": f"已清除 {len(completed)} 个已完成任务"}
+
+    completed_items = ctx.task_item_repo.get_by_status(TaskStatus.COMPLETED.value)
+    affected_tasks: set[int] = set()
+
+    for item in completed_items:
+        if item.id is not None:
+            ctx.task_item_repo.delete(item.id)
+            affected_tasks.add(item.task_id)
+
+    # 清理没有剩余 task_items 的空父任务
+    for task_id in affected_tasks:
+        remaining = ctx.task_item_repo.get_by_task(task_id)
+        if not remaining:
+            ctx.task_repo.delete(task_id)
+
+    return {"message": f"已清除 {len(completed_items)} 个已完成任务项"}
