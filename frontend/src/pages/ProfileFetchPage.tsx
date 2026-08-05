@@ -4,9 +4,10 @@ import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { useParseStore } from "../store/parseStore";
+import { useUiInputStore } from "../store/uiInputStore";
 
 export default function ProfileFetchPage() {
-  const [homeUrl, setHomeUrl] = useState("");
+  const { profileHomeUrl: homeUrl, setProfileHomeUrl: setHomeUrl } = useUiInputStore();
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [typeFilter, setTypeFilter] = useState("全部");
   const [maxItems, setMaxItems] = useState(50);

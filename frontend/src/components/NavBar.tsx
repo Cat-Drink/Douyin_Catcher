@@ -4,9 +4,9 @@ import { Download, Link, User, Key, Settings, Moon, Sun } from "lucide-react";
 import { useThemeStore } from "../store/themeStore";
 
 const navItems = [
-  { id: "download", path: "/download", label: "下载任务", icon: "download" },
   { id: "batch-fetch", path: "/batch-fetch", label: "批量抓取", icon: "link" },
   { id: "profile-fetch", path: "/profile-fetch", label: "主页抓取", icon: "user" },
+  { id: "download", path: "/download", label: "下载任务", icon: "download" },
   { id: "cookie", path: "/cookie", label: "Cookie 配置", icon: "key" },
   { id: "settings", path: "/settings", label: "设置", icon: "settings" },
 ];

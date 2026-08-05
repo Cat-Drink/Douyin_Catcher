@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useEffect, useCallback } from "react";
 import { Search, RefreshCw } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -6,23 +6,24 @@ import { TaskItem } from "../components/app/TaskItem";
 import { useTaskStore } from "../store/taskStore";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useToastStore } from "../store/toastStore";
+import { useUiInputStore } from "../store/uiInputStore";
 import * as api from "../lib/api";
 import { useNavigate } from "react-router-dom";
 import type { WsMessage } from "../hooks/useWebSocket";
 
 export default function DownloadPage() {
   const navigate = useNavigate();
-  const [search, setSearch] = useState("");
+  const { downloadSearch: search, setDownloadSearch: setSearch } = useUiInputStore();
   const {
     items, loading, error,
     loadTasks, applyProgressUpdate,
-    pauseItem, resumeItem, retryItem, pauseAll, resumeAll, clearCompleted,
+    pauseItem, resumeItem, retryItem, retryAllFailed, pauseAll, resumeAll, clearCompleted,
   } = useTaskStore();
   const { addToast } = useToastStore();
 
-  const handleDeleteItem = async (taskId: number) => {
+  const handleDeleteItem = async (itemId: number) => {
     try {
-      await api.deleteTask(taskId);
+      await api.deleteTaskItem(itemId);
       addToast("任务已删除", "success");
       loadTasks();
     } catch (e) {
@@ -99,6 +100,11 @@ export default function DownloadPage() {
         <Button variant="ghost" size="sm" onClick={pauseAll}>全部暂停</Button>
         <Button variant="ghost" size="sm" onClick={resumeAll}>全部开始</Button>
         <Button variant="ghost" size="sm" className="text-error" onClick={clearCompleted}>清空已完成</Button>
+        {stats.failed > 0 && (
+          <Button variant="ghost" size="sm" className="text-warning" onClick={retryAllFailed}>
+            全部失败重试
+          </Button>
+        )}
         <div className="flex-1" />
         <div className="relative w-48">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-disabled" />

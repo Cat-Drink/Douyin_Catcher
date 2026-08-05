@@ -232,7 +232,7 @@ export default function CookiePage() {
                   {cookie.status === "valid" ? "有效" : cookie.status === "invalid" ? "失效" : "未测试"}
                 </span>
                 <span className="text-xs text-text-disabled flex-1">
-                  最后使用: {cookie.lastUsed || "-"}
+                  最后使用: {cookie.lastUsed ? new Date(cookie.lastUsed).toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }) : "-"}
                 </span>
                 {cookie.testing ? (
                   <Loader2 size={14} className="animate-spin text-purple-500" />
