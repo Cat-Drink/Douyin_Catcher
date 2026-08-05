@@ -5,9 +5,10 @@ import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
 import { useParseStore, extractLinks } from "../store/parseStore";
 import { useToastStore } from "../store/toastStore";
+import { useUiInputStore } from "../store/uiInputStore";
 
 export default function BatchFetchPage() {
-  const [links, setLinks] = useState("");
+  const { batchLinks: links, setBatchLinks: setLinks } = useUiInputStore();
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -37,7 +38,7 @@ export default function BatchFetchPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     const text = await file.text();
-    setLinks((prev) => (prev ? `${prev}\n${text}` : text));
+    setLinks(links ? `${links}\n${text}` : text);
     e.target.value = "";
   };
 
