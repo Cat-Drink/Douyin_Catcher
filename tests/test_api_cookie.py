@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -24,13 +24,14 @@ def api_client(memory_db):
     ctx.conn = memory_db
     ctx.cookie_repo = CookieRepository(memory_db)
 
-    # Mock CookieTester 返回 valid 结果
+    # Mock CookieTester 返回 valid 结果（test_cookie 是 async 方法，必须用 AsyncMock）
     mock_tester = MagicMock()
-    mock_tester.test_cookie = MagicMock()
-    mock_tester.test_cookie.return_value = CookieTestResult(
-        is_valid=True,
-        error_message="",
-        user_nickname="测试用户",
+    mock_tester.test_cookie = AsyncMock(
+        return_value=CookieTestResult(
+            is_valid=True,
+            error_message="",
+            user_nickname="测试用户",
+        )
     )
     ctx.cookie_tester = mock_tester
 
