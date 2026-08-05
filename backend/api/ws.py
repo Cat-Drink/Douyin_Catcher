@@ -105,38 +105,44 @@ async def websocket_endpoint(ws: WebSocket):
 async def _push_progress_updates(ws: WebSocket, stop_event: asyncio.Event) -> None:
     """定期推送进度更新。
 
-    每 1 秒推送一次所有进行中任务项的进度。
+    每 1 秒推送一次 downloading/completed/failed 任务项的进度。
     """
     while not stop_event.is_set():
         try:
-            if ctx.scheduler is not None and ctx.task_item_repo is not None:
-                # 获取 downloading 状态的任务项进度
-                downloading = ctx.task_item_repo.get_by_status("downloading")
-                if downloading:
-                    updates = []
-                    for item in downloading:
-                        if item.id is not None:
-                            progress = 0.0
-                            if item.total_bytes > 0:
-                                progress = (item.downloaded_bytes / item.total_bytes) * 100
-                            updates.append(
-                                {
-                                    "task_item_id": item.id,
-                                    "downloaded_bytes": item.downloaded_bytes,
-                                    "total_bytes": item.total_bytes,
-                                    "progress": round(progress, 1),
-                                    "status": item.status,
-                                    "aweme_id": item.aweme_id,
-                                }
-                            )
-                    if updates:
-                        await ws.send_json(
+            if ctx.task_item_repo is not None:
+                all_updates: list[dict] = []
+
+                for status in ("downloading", "completed", "failed"):
+                    items = ctx.task_item_repo.get_by_status(status)
+                    for item in items:
+                        if item.id is None:
+                            continue
+
+                        progress: float = 0.0
+                        if status == "completed":
+                            progress = 100.0
+                        elif item.total_bytes > 0:
+                            progress = (item.downloaded_bytes / item.total_bytes) * 100.0
+
+                        all_updates.append(
                             {
-                                "type": "progress",
-                                "updates": updates,
-                                "timestamp": __import__("datetime").datetime.now().isoformat(),
+                                "task_item_id": item.id,
+                                "downloaded_bytes": item.downloaded_bytes,
+                                "total_bytes": item.total_bytes,
+                                "progress": round(progress, 1),
+                                "status": item.status,
+                                "aweme_id": item.aweme_id,
                             }
                         )
+
+                if all_updates:
+                    await ws.send_json(
+                        {
+                            "type": "progress",
+                            "updates": all_updates,
+                            "timestamp": __import__("datetime").datetime.now().isoformat(),
+                        }
+                    )
         except Exception:
             pass
         await asyncio.sleep(1)
