@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -15,10 +16,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from backend.state import ctx
 
 router = APIRouter()
-
 logger = logging.getLogger(__name__)
-
-from datetime import datetime
 
 
 class ConnectionManager:
