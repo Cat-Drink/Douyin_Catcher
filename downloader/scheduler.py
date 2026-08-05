@@ -22,7 +22,7 @@ import httpx
 
 from app.logger import get_logger
 from app.models import TaskItem
-from app.repositories import TaskItemRepository
+from app.repositories import TaskItemRepository, TaskRepository
 from downloader.downloader import Downloader
 from downloader.progress_reporter import ProgressReporter, ProgressUpdate
 
@@ -95,6 +95,7 @@ class Scheduler:
         """
         self._conn = conn
         self._item_repo = TaskItemRepository(conn)
+        self._task_repo = TaskRepository(conn)
         self._on_item_completed = on_item_completed
         self._on_item_failed = on_item_failed
 
@@ -215,6 +216,33 @@ class Scheduler:
             self._tasks[task_item.id] = task
             task.add_done_callback(lambda t, tid=task_item.id: self._tasks.pop(tid, None))
 
+    def _sync_task_stats(self, task_id: int) -> None:
+        """同步父任务的展示统计，不修改任何 task_item 状态。"""
+        items = self._item_repo.get_by_task(task_id)
+        if not items:
+            return
+
+        completed_count = sum(1 for item in items if item.status == "completed")
+        failed_count = sum(1 for item in items if item.status == "failed")
+        active_count = sum(
+            1
+            for item in items
+            if item.status in ("pending", "downloading", "paused")
+        )
+
+        self._task_repo.update_progress(
+            task_id,
+            completed_items=completed_count,
+            total_items=len(items),
+        )
+
+        if completed_count == len(items):
+            self._task_repo.update_status(task_id, "completed")
+        elif active_count == 0 and failed_count > 0:
+            self._task_repo.update_status(task_id, "failed")
+        elif active_count > 0:
+            self._task_repo.update_status(task_id, "downloading")
+
     async def _run_download(self, task_item: TaskItem) -> None:
         """单个任务项下载执行器。
 
@@ -228,20 +256,24 @@ class Scheduler:
             result = await self._downloader.download(task_item)
             if result.success:
                 logger.info("task_item id=%s 下载成功", task_item.id)
+                self._sync_task_stats(task_item.task_id)
                 if self._on_item_completed is not None:
                     self._on_item_completed(task_item.id)
             else:
                 reason = result.error or "未知错误"
                 logger.warning("task_item id=%s 下载失败: %s", task_item.id, reason)
+                self._sync_task_stats(task_item.task_id)
                 if self._on_item_failed is not None:
                     self._on_item_failed(task_item.id, reason)
         except asyncio.CancelledError:
             # 由 pause() 触发的取消，status 已由 pause() 设置为 paused
             logger.info("task_item id=%s 下载被取消（暂停）", task_item.id)
+            self._sync_task_stats(task_item.task_id)
             raise
         except Exception as e:
             logger.exception("task_item id=%s 下载异常", task_item.id)
             self._item_repo.update_status(task_item.id, "failed", fail_reason=str(e))
+            self._sync_task_stats(task_item.task_id)
             if self._on_item_failed is not None:
                 self._on_item_failed(task_item.id, str(e))
 
@@ -281,6 +313,10 @@ class Scheduler:
                 await task
             self._tasks.pop(task_item_id, None)
         self._item_repo.update_status(task_item_id, "paused")
+        # 同步父任务展示统计
+        item = self._item_repo.get(task_item_id)
+        if item is not None:
+            self._sync_task_stats(item.task_id)
         logger.info("已暂停 task_item id=%s", task_item_id)
 
     async def resume(self, task_item_id: int) -> None:
@@ -303,10 +339,10 @@ class Scheduler:
                 item.status,
             )
             return
-        # 重新创建下载任务（Downloader.download 内部会置 downloading）
         task = asyncio.create_task(self._run_download(item))
         self._tasks[task_item_id] = task
         task.add_done_callback(lambda t, tid=task_item_id: self._tasks.pop(tid, None))
+        self._sync_task_stats(item.task_id)
         logger.info("已恢复 task_item id=%s", task_item_id)
 
     async def pause_all(self) -> None:
@@ -341,6 +377,12 @@ class Scheduler:
         paused = self._item_repo.get_by_status("paused")
         items = pending + paused
         if items:
+            # 对涉及的任务同步父任务展示统计
+            tasks_seen: set[int] = set()
+            for it in items:
+                if it.task_id not in tasks_seen:
+                    self._sync_task_stats(it.task_id)
+                    tasks_seen.add(it.task_id)
             self.add_task_items(items)
             logger.info(
                 "启动恢复：加入队列 %d 项（pending=%d, paused=%d）",
