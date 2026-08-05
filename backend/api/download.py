@@ -112,9 +112,11 @@ async def list_task_items(task_id: int):
             progress=(
                 100.0
                 if item.status == "completed"
-                else (item.downloaded_bytes / max(item.total_bytes, 1)) * 100
-                if item.total_bytes > 0
-                else 0.0
+                else (
+                    (item.downloaded_bytes / max(item.total_bytes, 1)) * 100
+                    if item.total_bytes > 0
+                    else 0.0
+                )
             ),
             cover_url=item.cover_url,
             fail_reason=item.fail_reason,
@@ -237,6 +239,32 @@ async def retry_download(task_item_id: int):
     # 状态已重置为 pending，不会被已完成去重跳过
     ctx.scheduler.add_task_items([item])
     return {"message": f"任务项 {task_item_id} 已重新入队"}
+
+
+@router.post("/retry-all")
+async def retry_all_failed():
+    """将所有失败状态的任务项重新入队。
+
+    遍历所有 failed 状态的任务项，逐个重置为 pending 后重新加入下载队列。
+    """
+    if ctx.task_item_repo is None or ctx.scheduler is None:
+        raise HTTPException(status_code=503, detail="Service not ready")
+
+    failed_items = ctx.task_item_repo.get_by_status("failed")
+    if not failed_items:
+        return {"message": "没有失败任务", "retried_count": 0}
+
+    for item in failed_items:
+        if item.id is not None:
+            ctx.task_item_repo.reset_for_retry(item.id)
+
+    # 重新入队（reset_for_retry 已将状态置为 pending，不会被去重跳过）
+    ctx.scheduler.add_task_items(failed_items)
+
+    return {
+        "message": f"已重新入队 {len(failed_items)} 个失败任务",
+        "retried_count": len(failed_items),
+    }
 
 
 @router.post("/pause-all")

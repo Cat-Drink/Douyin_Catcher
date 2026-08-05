@@ -231,9 +231,7 @@ class Scheduler:
         completed_count = sum(1 for item in items if item.status == "completed")
         failed_count = sum(1 for item in items if item.status == "failed")
         active_count = sum(
-            1
-            for item in items
-            if item.status in ("pending", "downloading", "paused")
+            1 for item in items if item.status in ("pending", "downloading", "paused")
         )
 
         self._task_repo.update_progress(

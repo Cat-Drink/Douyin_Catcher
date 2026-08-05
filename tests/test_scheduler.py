@@ -747,21 +747,28 @@ class TestTaskStatsSync:
 
     def test_sync_task_stats_all_completed(self, memory_db):
         """所有任务项完成时，父任务 status=completed，completed_items=总数。"""
+        from app.repositories import TaskItemRepository, TaskRepository
         from downloader.scheduler import Scheduler
-        from app.repositories import TaskRepository, TaskItemRepository
 
         task_repo = TaskRepository(memory_db)
         item_repo = TaskItemRepository(memory_db)
 
-        task = Task(id=None, source_type="single", source_url="x",
-                    status="pending", download_dir="/tmp")
+        task = Task(
+            id=None, source_type="single", source_url="x", status="pending", download_dir="/tmp"
+        )
         tid = task_repo.create(task)
 
         for i in range(3):
-            item_repo.create(TaskItem(
-                id=None, task_id=tid, aweme_id=f"aw{i}", url=f"http://x/{i}",
-                type="video", status="completed",
-            ))
+            item_repo.create(
+                TaskItem(
+                    id=None,
+                    task_id=tid,
+                    aweme_id=f"aw{i}",
+                    url=f"http://x/{i}",
+                    type="video",
+                    status="completed",
+                )
+            )
 
         s = Scheduler(conn=memory_db)
         s._sync_task_stats(tid)
@@ -773,22 +780,42 @@ class TestTaskStatsSync:
 
     def test_sync_task_stats_mixed_active(self, memory_db):
         """存在进行中项时，父任务 status=downloading。"""
+        from app.repositories import TaskItemRepository, TaskRepository
         from downloader.scheduler import Scheduler
-        from app.repositories import TaskRepository, TaskItemRepository
 
         task_repo = TaskRepository(memory_db)
         item_repo = TaskItemRepository(memory_db)
 
-        task = Task(id=None, source_type="single", source_url="x",
-                    status="pending", download_dir="/tmp")
+        task = Task(
+            id=None, source_type="single", source_url="x", status="pending", download_dir="/tmp"
+        )
         tid = task_repo.create(task)
 
-        item_repo.create(TaskItem(id=None, task_id=tid, aweme_id="a1",
-                                   url="http://x/1", type="video", status="completed"))
-        item_repo.create(TaskItem(id=None, task_id=tid, aweme_id="a2",
-                                   url="http://x/2", type="video", status="downloading"))
-        item_repo.create(TaskItem(id=None, task_id=tid, aweme_id="a3",
-                                   url="http://x/3", type="video", status="failed"))
+        item_repo.create(
+            TaskItem(
+                id=None,
+                task_id=tid,
+                aweme_id="a1",
+                url="http://x/1",
+                type="video",
+                status="completed",
+            )
+        )
+        item_repo.create(
+            TaskItem(
+                id=None,
+                task_id=tid,
+                aweme_id="a2",
+                url="http://x/2",
+                type="video",
+                status="downloading",
+            )
+        )
+        item_repo.create(
+            TaskItem(
+                id=None, task_id=tid, aweme_id="a3", url="http://x/3", type="video", status="failed"
+            )
+        )
 
         s = Scheduler(conn=memory_db)
         s._sync_task_stats(tid)
@@ -799,18 +826,22 @@ class TestTaskStatsSync:
 
     def test_sync_task_stats_all_failed(self, memory_db):
         """全部失败且无活动项时，父任务 status=failed。"""
+        from app.repositories import TaskItemRepository, TaskRepository
         from downloader.scheduler import Scheduler
-        from app.repositories import TaskRepository, TaskItemRepository
 
         task_repo = TaskRepository(memory_db)
         item_repo = TaskItemRepository(memory_db)
 
-        task = Task(id=None, source_type="single", source_url="x",
-                    status="pending", download_dir="/tmp")
+        task = Task(
+            id=None, source_type="single", source_url="x", status="pending", download_dir="/tmp"
+        )
         tid = task_repo.create(task)
 
-        item_repo.create(TaskItem(id=None, task_id=tid, aweme_id="a1",
-                                   url="http://x/1", type="video", status="failed"))
+        item_repo.create(
+            TaskItem(
+                id=None, task_id=tid, aweme_id="a1", url="http://x/1", type="video", status="failed"
+            )
+        )
 
         s = Scheduler(conn=memory_db)
         s._sync_task_stats(tid)
@@ -820,18 +851,27 @@ class TestTaskStatsSync:
 
     def test_sync_task_stats_does_not_change_items(self, memory_db):
         """_sync_task_stats 不修改任何 task_item 的状态。"""
+        from app.repositories import TaskItemRepository, TaskRepository
         from downloader.scheduler import Scheduler
-        from app.repositories import TaskRepository, TaskItemRepository
 
         task_repo = TaskRepository(memory_db)
         item_repo = TaskItemRepository(memory_db)
 
-        task = Task(id=None, source_type="single", source_url="x",
-                    status="pending", download_dir="/tmp")
+        task = Task(
+            id=None, source_type="single", source_url="x", status="pending", download_dir="/tmp"
+        )
         tid = task_repo.create(task)
 
-        iid = item_repo.create(TaskItem(id=None, task_id=tid, aweme_id="a1",
-                                         url="http://x/1", type="video", status="downloading"))
+        iid = item_repo.create(
+            TaskItem(
+                id=None,
+                task_id=tid,
+                aweme_id="a1",
+                url="http://x/1",
+                type="video",
+                status="downloading",
+            )
+        )
 
         s = Scheduler(conn=memory_db)
         s._sync_task_stats(tid)
