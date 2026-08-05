@@ -32,11 +32,13 @@ class ProgressUpdate:
         task_item_id: 任务项 ID
         downloaded_bytes: 已下载字节数
         total_bytes: 文件总字节数
+        status: 任务项状态，默认 "downloading"
     """
 
     task_item_id: int
     downloaded_bytes: int
     total_bytes: int
+    status: str = "downloading"
 
 
 class ProgressReporter:
