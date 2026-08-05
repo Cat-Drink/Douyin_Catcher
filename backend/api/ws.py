@@ -18,6 +18,8 @@ router = APIRouter()
 
 logger = logging.getLogger(__name__)
 
+from datetime import datetime
+
 
 class ConnectionManager:
     """WebSocket 连接管理器。
@@ -140,7 +142,7 @@ async def _push_progress_updates(ws: WebSocket, stop_event: asyncio.Event) -> No
                         {
                             "type": "progress",
                             "updates": all_updates,
-                            "timestamp": __import__("datetime").datetime.now().isoformat(),
+                            "timestamp": datetime.now().isoformat(),
                         }
                     )
         except Exception:
