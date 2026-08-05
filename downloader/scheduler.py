@@ -181,12 +181,18 @@ class Scheduler:
         Args:
             items: 待下载任务项列表
         """
+        # 收集涉及的任务 ID 用于同步父任务展示统计（如 retry 重置状态后）
+        task_ids: set[int] = set()
         for item in items:
             if item.aweme_id is not None and self._is_already_completed(item.aweme_id):
                 logger.info("跳过已完成项 aweme_id=%s", item.aweme_id)
                 continue
             self._queue.put_nowait(item)
             logger.info("入队 task_item id=%s aweme_id=%s", item.id, item.aweme_id)
+            if item.task_id is not None:
+                task_ids.add(item.task_id)
+        for tid in task_ids:
+            self._sync_task_stats(tid)
 
     def _is_already_completed(self, aweme_id: str) -> bool:
         """去重：查 task_items 是否已有该 aweme_id 的 completed 记录。
@@ -339,10 +345,11 @@ class Scheduler:
                 item.status,
             )
             return
+        self._item_repo.update_status(task_item_id, "downloading")
+        self._sync_task_stats(item.task_id)
         task = asyncio.create_task(self._run_download(item))
         self._tasks[task_item_id] = task
         task.add_done_callback(lambda t, tid=task_item_id: self._tasks.pop(tid, None))
-        self._sync_task_stats(item.task_id)
         logger.info("已恢复 task_item id=%s", task_item_id)
 
     async def pause_all(self) -> None:
