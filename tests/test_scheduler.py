@@ -747,8 +747,8 @@ class TestTaskStatsSync:
 
     def test_sync_task_stats_all_completed(self, memory_db):
         """所有任务项完成时，父任务 status=completed，completed_items=总数。"""
+        from app.repositories import TaskItemRepository, TaskRepository
         from downloader.scheduler import Scheduler
-        from app.repositories import TaskRepository, TaskItemRepository
 
         task_repo = TaskRepository(memory_db)
         item_repo = TaskItemRepository(memory_db)
@@ -773,8 +773,8 @@ class TestTaskStatsSync:
 
     def test_sync_task_stats_mixed_active(self, memory_db):
         """存在进行中项时，父任务 status=downloading。"""
+        from app.repositories import TaskItemRepository, TaskRepository
         from downloader.scheduler import Scheduler
-        from app.repositories import TaskRepository, TaskItemRepository
 
         task_repo = TaskRepository(memory_db)
         item_repo = TaskItemRepository(memory_db)
@@ -799,8 +799,8 @@ class TestTaskStatsSync:
 
     def test_sync_task_stats_all_failed(self, memory_db):
         """全部失败且无活动项时，父任务 status=failed。"""
+        from app.repositories import TaskItemRepository, TaskRepository
         from downloader.scheduler import Scheduler
-        from app.repositories import TaskRepository, TaskItemRepository
 
         task_repo = TaskRepository(memory_db)
         item_repo = TaskItemRepository(memory_db)
@@ -820,8 +820,8 @@ class TestTaskStatsSync:
 
     def test_sync_task_stats_does_not_change_items(self, memory_db):
         """_sync_task_stats 不修改任何 task_item 的状态。"""
+        from app.repositories import TaskItemRepository, TaskRepository
         from downloader.scheduler import Scheduler
-        from app.repositories import TaskRepository, TaskItemRepository
 
         task_repo = TaskRepository(memory_db)
         item_repo = TaskItemRepository(memory_db)
