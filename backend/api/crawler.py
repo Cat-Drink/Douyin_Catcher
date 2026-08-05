@@ -8,6 +8,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from app.models import now_iso
 from backend.state import ctx
 
 router = APIRouter()
@@ -75,6 +76,7 @@ async def parse_urls(req: ParseRequest):
         valid_cookie = ctx.cookie_repo.get_valid()
         if valid_cookie is not None:
             cookie = valid_cookie.content
+            ctx.cookie_repo.update_last_used(valid_cookie.id, now_iso())
 
     results = []
     for url in req.urls:
@@ -202,6 +204,7 @@ async def preview_url(url: str):
         valid_cookie = ctx.cookie_repo.get_valid()
         if valid_cookie is not None:
             cookie = valid_cookie.content
+            ctx.cookie_repo.update_last_used(valid_cookie.id, now_iso())
 
     try:
         parsed_url = await ctx.url_parser.parse(url)
