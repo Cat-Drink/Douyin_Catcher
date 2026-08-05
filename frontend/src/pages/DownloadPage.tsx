@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useEffect, useCallback } from "react";
 import { Search, RefreshCw } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -6,13 +6,14 @@ import { TaskItem } from "../components/app/TaskItem";
 import { useTaskStore } from "../store/taskStore";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useToastStore } from "../store/toastStore";
+import { useUiInputStore } from "../store/uiInputStore";
 import * as api from "../lib/api";
 import { useNavigate } from "react-router-dom";
 import type { WsMessage } from "../hooks/useWebSocket";
 
 export default function DownloadPage() {
   const navigate = useNavigate();
-  const [search, setSearch] = useState("");
+  const { downloadSearch: search, setDownloadSearch: setSearch } = useUiInputStore();
   const {
     items, loading, error,
     loadTasks, applyProgressUpdate,
