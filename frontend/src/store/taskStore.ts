@@ -54,6 +54,8 @@ interface TaskStore {
   loading: boolean;
   /** 错误信息 */
   error: string | null;
+  /** 上次校验时间 */
+  lastVerifiedAt: string | null;
 
   /** 从 API 加载任务数据 */
   loadTasks: () => Promise<void>;
@@ -73,6 +75,8 @@ interface TaskStore {
   resumeAll: () => Promise<void>;
   /** 清空已完成 */
   clearCompleted: () => Promise<void>;
+  /** 校验已完成文件是否存在 */
+  verifyFiles: () => Promise<{ missing_count: number }>;
 }
 
 export const useTaskStore = create<TaskStore>((set, get) => ({
@@ -80,6 +84,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   tasks: [],
   loading: false,
   error: null,
+  lastVerifiedAt: null,
 
 	  loadTasks: async () => {
 	    set({ loading: true, error: null });
@@ -201,6 +206,21 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       await get().loadTasks();
     } catch (e) {
       console.error("清空失败:", e);
+    }
+  },
+
+  verifyFiles: async () => {
+    try {
+      const result = await api.verifyCompletedFiles();
+      set({ lastVerifiedAt: new Date().toISOString() });
+      // 如果有缺失文件，刷新列表以更新状态
+      if (result.missing_count > 0) {
+        await get().loadTasks();
+      }
+      return result;
+    } catch (e) {
+      console.error("文件校验失败:", e);
+      return { missing_count: 0 };
     }
   },
 }));
