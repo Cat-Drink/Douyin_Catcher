@@ -37,6 +37,7 @@ class ParsedURLResponse(BaseModel):
     image_count: int | None = None
     no_watermark_url: str | None = None
     image_urls: list[str] | None = None
+    publish_time: str | None = None
     error: str | None = None
 
 
@@ -103,6 +104,7 @@ async def parse_urls(req: ParseRequest):
                             ),
                             no_watermark_url=video_info.no_watermark_url,
                             image_urls=video_info.image_urls or None,
+                            publish_time=video_info.publish_time,
                         )
                     )
                 except Exception as ve:
@@ -176,6 +178,7 @@ async def fetch_home(req: FetchHomeRequest):
                     cover_url=post.cover_url,
                     duration=post.duration,
                     image_count=post.image_count,
+                    publish_time=post.create_time,
                 )
             )
             if len(items) >= req.max_items:
@@ -224,6 +227,7 @@ async def preview_url(url: str):
                     image_count=len(video_info.image_urls) if video_info.image_urls else None,
                     no_watermark_url=video_info.no_watermark_url,
                     image_urls=video_info.image_urls or None,
+                    publish_time=video_info.publish_time,
                 )
             except Exception as ve:
                 return ParsedURLResponse(
