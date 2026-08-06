@@ -166,19 +166,39 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 
   retryItem: async (itemId) => {
     try {
+      // 先本地立即更新状态为 pending，进度置 0，提升用户体验
+      set((state) => ({
+        items: state.items.map((item) =>
+          item.id === itemId
+            ? { ...item, status: "pending", progress: 0, downloadedBytes: 0, totalBytes: 0 }
+            : item,
+        ),
+      }));
       await api.retryDownload(itemId);
-      await get().loadTasks();
+      // 不立即 loadTasks，等待 WebSocket 推送更新
+      // 但如果 WebSocket 断开，3 秒后会由轮询机制自动刷新
     } catch (e) {
       console.error("重新执行失败:", e);
+      // 失败时还原真实状态
+      await get().loadTasks();
     }
   },
 
   retryAllFailed: async () => {
     try {
+      // 本地立即将所有 failed 项置为 pending
+      set((state) => ({
+        items: state.items.map((item) =>
+          item.status === "failed"
+            ? { ...item, status: "pending", progress: 0, downloadedBytes: 0, totalBytes: 0 }
+            : item,
+        ),
+      }));
       await api.retryAllFailed();
-      await get().loadTasks();
+      // 等待 WebSocket 推送或轮询更新
     } catch (e) {
       console.error("全部失败重试失败:", e);
+      await get().loadTasks();
     }
   },
 
