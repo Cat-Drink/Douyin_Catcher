@@ -21,10 +21,14 @@ export default function ProfileFetchPage() {
     downloadSelected,
   } = useParseStore();
 
-  const handleFetch = () => {
+  const handleFetch = async () => {
     if (!homeUrl.trim()) return;
     setSelected(new Set());
-    fetchHome(homeUrl.trim(), maxItems);
+    await fetchHome(homeUrl.trim(), maxItems);
+    // 解析成功后自动清空输入框 (issue-8)
+    if (!useParseStore.getState().profileError) {
+      setHomeUrl("");
+    }
   };
 
   const toggleSelect = (index: number) => {
