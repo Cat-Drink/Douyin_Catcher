@@ -1,8 +1,9 @@
-"""URLParser + VideoParser 全链路集成测试。
+"""URLParser + VideoParser + Downloader 全链路集成测试。
 
-通过真实抖音短链验证从链接解析到视频详情获取的完整链路：
+通过真实抖音短链验证从链接解析到视频文件下载到本地的完整链路：
     短链 → follow_redirect → identify_type → extract_aweme_id
     → VideoParser.parse_video() → VideoInfo（含无水印直链/图集URL）
+    → Downloader.download() → 本地文件（验证存在、非空、MP4格式）
 
 运行条件：
     - 项目根目录存在 .test_cookie.txt 文件（已被 .gitignore 排除）
@@ -13,8 +14,13 @@
       → 重定向到 iesdouyin.com/share/slides/
       → aweme_id=7668332388174388986
       → detail 接口返回图集（image_set，9张图片 + 1个视频）
-    - 普通视频短链：通过 URLParser 解析后获取 aweme_id
-      → detail 接口返回视频信息（含无水印直链）
+      → 下载视频直链到本地并验证文件完整性
+    - 普通视频：通过 slides 图文中的视频附带来验证视频元数据获取
+
+已知限制（见 TODO/issue 跟踪）：
+    - 直播回放链接（/vsdetail/）使用 webcast/xgplayer 私有流协议，
+      不兼容 aweme/v1/web/aweme/detail 接口（返回 core_dep 过滤）。
+      需单独研究 webcast API 认证与流解析后支持。
 """
 
 from __future__ import annotations
@@ -30,6 +36,7 @@ from crawlers.http_client import HttpClient
 from crawlers.signer import DEFAULT_USER_AGENT, Signer
 from crawlers.url_parser import URLParser
 from crawlers.video_parser import VideoParser
+from tests.test_downloader import _insert_item, _make_downloader_with_item
 
 pytestmark = [pytest.mark.integration, pytest.mark.full_chain]
 
@@ -39,9 +46,6 @@ _COOKIE_PATH = Path(__file__).parent.parent / ".test_cookie.txt"
 # 用户报告的图文分享短链
 _SHORT_URL_SLIDES = "https://v.douyin.com/00tC3WPkgUA/"
 _SLIDES_AWEME_ID = "7668332388174388986"
-
-# 已知公开视频 aweme_id
-_VIDEO_AWEME_ID = "7646700367584954368"
 
 
 def _load_cookie() -> str | None:
@@ -97,8 +101,11 @@ def video_parser(real_http_client: HttpClient) -> VideoParser:
 class TestFullChainSlides:
     """图文分享链接全链路测试。
 
-    覆盖：短链 → URLParser → VideoParser → VideoInfo（含图集URL）。
+    覆盖：短链 → URLParser → VideoParser → Downloader → 本地文件。
     """
+
+    # 类级别缓存，在 test_02 中设置，test_03 中读取
+    _no_watermark_url: str | None = None
 
     async def test_01_url_parser_extracts_aweme_id(
         self, url_parser: URLParser
@@ -157,6 +164,50 @@ class TestFullChainSlides:
         assert video_info.publish_time is not None, "发布时间不应为 None"
         assert "T" in video_info.publish_time and video_info.publish_time.endswith("Z"), (
             f"发布时间应为 ISO8601 格式，当前: {video_info.publish_time}"
+        )
+
+        # 缓存 no_watermark_url 供下载测试使用
+        TestFullChainSlides._no_watermark_url = video_info.no_watermark_url
+
+    async def test_03_download_video_to_local(
+        self, tmp_path: Path
+    ) -> None:
+        """步骤3：从 no_watermark_url 真实下载视频到本地并验证。
+
+        验证要点：
+        - Downloader.download() 返回 success=True
+        - 本地文件存在且非空
+        - 文件是有效的 MP4 格式（ftyp magic bytes）
+        """
+        no_watermark_url = TestFullChainSlides._no_watermark_url
+        assert no_watermark_url is not None, (
+            "test_02 未成功缓存 no_watermark_url，请确保测试按顺序执行"
+        )
+
+        # 创建 Downloader 并执行下载
+        dl, item = _make_downloader_with_item(
+            download_dir=str(tmp_path),
+            aweme_id=_SLIDES_AWEME_ID,
+            url=no_watermark_url,
+            item_type="video",
+        )
+        _insert_item(dl._conn, item)
+
+        result = await dl.download(item)
+        assert result.success, f"下载失败: {result.error}"
+        assert result.local_path is not None, "local_path 不应为 None"
+
+        # 验证文件存在且非空
+        file_path = Path(result.local_path)
+        assert file_path.exists(), f"下载文件不存在: {file_path}"
+        assert file_path.stat().st_size > 0, f"下载文件为空: {file_path}"
+
+        # 验证 MP4 格式（magic bytes: ftyp box）
+        with open(file_path, "rb") as f:
+            header = f.read(12)
+        # MP4 文件的第 4-8 字节为 ftyp（File Type Box）
+        assert header[4:8] == b"ftyp", (
+            f"非 MP4 文件格式，前 12 字节: {header.hex()}"
         )
 
 
