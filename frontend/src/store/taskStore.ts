@@ -96,24 +96,20 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 	        }
 	      }
 
-	      // 合并：已存在的 completed/failed 项保留，更高进度的项保留
-	      set((state) => {
-	        const existingMap = new Map(state.items.map((i) => [i.id, i]));
-	        const merged: DisplayTask[] = freshItems.map((fresh) => {
-	          const existing = existingMap.get(fresh.id);
-	          if (!existing) return fresh;
+// 合并：以 API 数据为权威源，保留更高进度的项
+		      set((state) => {
+		        const existingMap = new Map(state.items.map((i) => [i.id, i]));
+		        const merged: DisplayTask[] = freshItems.map((fresh) => {
+		          const existing = existingMap.get(fresh.id);
+		          if (!existing) return fresh;
 
-	          // 如果已有项是终态（completed/failed），且新的不是或一样，保留已有
-	          const isTerminal = (s: api.TaskStatus) => s === "completed" || s === "failed";
-	          if (isTerminal(existing.status) && !isTerminal(fresh.status)) {
-	            return existing;
-	          }
-	          // 如果已有项进度更高，保留已有
-	          if (existing.progress > fresh.progress && existing.status === fresh.status) {
-	            return existing;
-	          }
-	          return fresh;
-	        });
+		          // 如果 API 返回的 updated_at 比本地新，优先使用 API 数据
+		          // 如果本地进度更高且状态相同，保留本地以免闪烁
+		          if (existing.progress > fresh.progress && existing.status === fresh.status) {
+		            return existing;
+		          }
+		          return fresh;
+		        });
 	        return { items: merged, tasks, loading: false };
 	      });
 	    } catch (e) {
