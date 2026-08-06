@@ -160,7 +160,8 @@ class URLParser:
                detail 接口后的结果，URLParser 统一归为 ``'video'``）
             3. 路径含 ``/vsdetail/`` → ``'video'``（直播回放/录播视频）
             4. 路径含 ``/mix/`` 或 ``/collection/`` → ``'video'``（合集/合辑页面）
-            5. 其他 → 抛 ``InvalidURLFormatError``
+            5. 路径含 ``/share/slides/`` → ``'video'``（图文分享/幻灯片）
+            6. 其他 → 抛 ``InvalidURLFormatError``
 
         参数:
             url: 已规范化的 URL（短链需先 follow_redirect 拿到最终 URL）。
@@ -189,7 +190,10 @@ class URLParser:
         # 规则 4：合集/合辑页面
         if "/mix/" in path or "/collection/" in path:
             return "video"
-        # 规则 5：无法识别
+        # 规则 5：图文分享/幻灯片（iesdouyin.com/share/slides/）
+        if "/share/slides/" in path:
+            return "video"
+        # 规则 6：无法识别
         raise InvalidURLFormatError(f"无法识别的抖音链接类型: {url}")
 
     @staticmethod
@@ -201,6 +205,7 @@ class URLParser:
             - 路径形式：``/video/{aweme_id}`` 或 ``/share/video/{aweme_id}``
             - 路径形式：``/vsdetail/{aweme_id}``（直播回放）
             - 路径形式：``/mix/{aweme_id}`` 或 ``/collection/{aweme_id}``（合集）
+            - 路径形式：``/share/slides/{aweme_id}``（图文分享）
 
         参数:
             url: 已规范化的 URL。
@@ -216,10 +221,10 @@ class URLParser:
         query = parse_qs(parsed.query or "")
         if "aweme_id" in query and query["aweme_id"]:
             return query["aweme_id"][0]
-        # 路径形式：取 /video/ /vsdetail/ /mix/ /collection/ 后的段
+        # 路径形式：取 /video/ /vsdetail/ /mix/ /collection/ /share/slides/ 后的段
         path_parts = (parsed.path or "").split("/")
         for i, part in enumerate(path_parts):
-            if part in ("video", "vsdetail", "mix", "collection") and i + 1 < len(path_parts) and path_parts[i + 1]:
+            if part in ("video", "vsdetail", "mix", "collection", "slides") and i + 1 < len(path_parts) and path_parts[i + 1]:
                 return path_parts[i + 1]
         return None
 
