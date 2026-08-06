@@ -23,11 +23,15 @@ export default function BatchFetchPage() {
 
   const { addToast } = useToastStore();
 
-  const handleParse = () => {
+  const handleParse = async () => {
     const urls = extractLinks(links);
     if (urls.length === 0) return;
     setSelected(new Set());
-    parseUrls(urls);
+    await parseUrls(urls);
+    // 解析成功后自动清空输入框 (issue-8)
+    if (!useParseStore.getState().batchError) {
+      setLinks("");
+    }
   };
 
   const handleFileImport = () => {
