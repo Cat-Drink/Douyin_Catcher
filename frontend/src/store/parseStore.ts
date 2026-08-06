@@ -16,6 +16,7 @@ export interface ParsedResult {
   imageCount?: number;
   noWatermarkUrl?: string;
   imageUrls?: string[];
+  publishedAt?: string;
   error?: string;
 }
 
@@ -73,6 +74,7 @@ export const useParseStore = create<ParseStore>((set) => ({
         imageCount: r.image_count,
         noWatermarkUrl: r.no_watermark_url || undefined,
         imageUrls: r.image_urls || undefined,
+        publishedAt: r.publish_time || undefined,
         error: r.error || undefined,
       }));
       set({ batchResults: results, batchLoading: false });
@@ -110,6 +112,7 @@ export const useParseStore = create<ParseStore>((set) => ({
         imageCount: r.image_count,
         noWatermarkUrl: r.no_watermark_url || undefined,
         imageUrls: r.image_urls || undefined,
+        publishedAt: r.publish_time || undefined,
       }));
       set({ profileResults: results, profileLoading: false });
     } catch (e) {
