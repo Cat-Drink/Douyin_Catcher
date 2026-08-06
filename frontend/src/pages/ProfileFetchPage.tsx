@@ -6,6 +6,21 @@ import { Badge } from "../components/ui/badge";
 import { useParseStore } from "../store/parseStore";
 import { useUiInputStore } from "../store/uiInputStore";
 
+/** ISO8601 时间戳 → 短格式展示 */
+function formatTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const hours = String(d.getHours()).padStart(2, "0");
+    const minutes = String(d.getMinutes()).padStart(2, "0");
+    return `${month}-${day} ${hours}:${minutes}`;
+  } catch {
+    return iso;
+  }
+}
+
 export default function ProfileFetchPage() {
   const { profileHomeUrl: homeUrl, setProfileHomeUrl: setHomeUrl } = useUiInputStore();
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -180,6 +195,9 @@ export default function ProfileFetchPage() {
                   <div className="text-xs text-text-secondary mt-0.5">@{item.author || "未知作者"}</div>
                 </div>
                 <Badge variant={item.type === "video" ? "video" : item.type === "image_set" ? "image_set" : "long_video"} />
+                <span className="text-xs text-text-secondary w-14 text-right flex-shrink-0">
+                  {item.publishedAt ? formatTime(item.publishedAt) : ""}
+                </span>
                 <span className="text-xs text-text-secondary w-12 text-right flex-shrink-0">
                   {item.duration || (item.imageCount ? `${item.imageCount}张` : "")}
                 </span>
