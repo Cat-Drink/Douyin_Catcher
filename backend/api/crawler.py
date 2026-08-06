@@ -109,12 +109,16 @@ async def parse_urls(req: ParseRequest):
                     )
                 except Exception as ve:
                     # VideoParser 失败，回退到基本解析信息
+                    error_msg = f"视频详情解析失败: {ve}"
+                    # 对 vsdetail 直播回放链接，提示可能需灯牌等级
+                    if "/vsdetail/" in url:
+                        error_msg += "（直播回放可能需要粉丝灯牌等级）"
                     results.append(
                         ParsedURLResponse(
                             url=url,
                             type=parsed_url.type,
                             aweme_id=aweme_id,
-                            error=f"视频详情解析失败: {ve}",
+                            error=error_msg,
                         )
                     )
             else:
