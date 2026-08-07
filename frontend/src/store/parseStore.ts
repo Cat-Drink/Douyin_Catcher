@@ -59,39 +59,39 @@ export const useParseStore = create<ParseStore>((set) => ({
   profileError: null,
 
 parseUrls: async (urls: string[]) => {
-	    set({ batchLoading: true, batchError: null }); // 不再清空 batchResults（追加模式）
-	    try {
-	      const rawResults = await api.parseUrls(urls);
-	      set((state) => {
-	        const offset = state.batchResults.length;
-	        const results: ParsedResult[] = rawResults.map((r: any, i: number) => ({
-	          index: i, // 新结果在最前，索引从 0 开始
-	          url: urls[i] || r.url || "",
-	          title: r.title || "",
-	          author: r.author || "",
-	          type: (r.type as ParsedResult["type"]) || "video",
-	          awemeId: r.aweme_id,
-	          coverUrl: r.cover_url,
-	          duration: r.duration,
-	          imageCount: r.image_count,
-	          noWatermarkUrl: r.no_watermark_url || undefined,
-	          imageUrls: r.image_urls || undefined,
-	          publishedAt: r.publish_time || undefined,
-	          error: r.error || undefined,
-	        }));
-	        return {
-	          // 新结果在最顶端，旧结果排后面，整体重新编号
-	          batchResults: [...results, ...state.batchResults].map((item, i) => ({ ...item, index: i })),
-	          batchLoading: false,
-	        };
-	      });
-	    } catch (e) {
-	      set({
-	        batchError: e instanceof Error ? e.message : "解析失败",
-	        batchLoading: false,
-	      });
-	    }
-	  },
+    set({ batchLoading: true, batchError: null }); // 不再清空 batchResults（追加模式）
+    try {
+      const rawResults = await api.parseUrls(urls);
+      set((state) => {
+        const offset = state.batchResults.length;
+        const results: ParsedResult[] = rawResults.map((r: any, i: number) => ({
+          index: offset + i,
+          url: urls[i] || r.url || "",
+          title: r.title || "",
+          author: r.author || "",
+          type: (r.type as ParsedResult["type"]) || "video",
+          awemeId: r.aweme_id,
+          coverUrl: r.cover_url,
+          duration: r.duration,
+          imageCount: r.image_count,
+          noWatermarkUrl: r.no_watermark_url || undefined,
+          imageUrls: r.image_urls || undefined,
+          publishedAt: r.publish_time || undefined,
+          error: r.error || undefined,
+        }));
+        return {
+          // 追加模式：按输入顺序排列表格，新结果追加在底部
+          batchResults: [...state.batchResults, ...results],
+          batchLoading: false,
+        };
+      });
+    } catch (e) {
+      set({
+        batchError: e instanceof Error ? e.message : "解析失败",
+        batchLoading: false,
+      });
+    }
+  },
 
   clearBatch: () => {
     set({ batchResults: [], batchError: null });
@@ -108,8 +108,9 @@ parseUrls: async (urls: string[]) => {
     try {
       const result = await api.fetchHome(url, maxItems);
       set((state) => {
+        const offset = state.profileResults.length;
         const results: ParsedResult[] = (result.items || []).map((r: any, i: number) => ({
-          index: i,
+          index: offset + i,
           url: r.url || "",
           title: r.title || "",
           author: r.author || "",
@@ -123,8 +124,8 @@ parseUrls: async (urls: string[]) => {
           publishedAt: r.publish_time || undefined,
         }));
         return {
-          // 新结果在最顶端，旧结果排后面，整体重新编号
-          profileResults: [...results, ...state.profileResults].map((item, i) => ({ ...item, index: i })),
+          // 追加模式：新结果追加在底部，按抓取顺序排列
+          profileResults: [...state.profileResults, ...results],
           profileLoading: false,
         };
       });
