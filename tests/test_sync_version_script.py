@@ -121,9 +121,7 @@ class TestVersionReplacement:
         template = 'version="{version}"'
 
         content = 'app = FastAPI(\n    title="...",\n    version="0.3.1",\n)'
-        new_content = pattern.sub(
-            template.format(version="0.3.2"), content, count=1
-        )
+        new_content = pattern.sub(template.format(version="0.3.2"), content, count=1)
         assert 'version="0.3.2"' in new_content
 
     def test_lib_rs_replacement(self) -> None:
@@ -132,9 +130,7 @@ class TestVersionReplacement:
         template = '"{version}".to_string()'
 
         content = 'fn get_app_version() -> String {\n    "0.3.1".to_string()\n}'
-        new_content = pattern.sub(
-            template.format(version="0.3.2"), content, count=1
-        )
+        new_content = pattern.sub(template.format(version="0.3.2"), content, count=1)
         assert '"0.3.2".to_string()' in new_content
 
 

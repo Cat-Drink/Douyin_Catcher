@@ -124,9 +124,9 @@ class TestParse:
         """图文分享短链 → 完整解析 → type=video, aweme_id 正确。"""
         result = await url_parser.parse(_SHORT_URL_SLIDES)
         assert result.type == "video", f"预期 type=video，实际 {result.type}"
-        assert result.aweme_id == _SLIDES_AWEME_ID, (
-            f"预期 aweme_id={_SLIDES_AWEME_ID}，实际 {result.aweme_id}"
-        )
+        assert (
+            result.aweme_id == _SLIDES_AWEME_ID
+        ), f"预期 aweme_id={_SLIDES_AWEME_ID}，实际 {result.aweme_id}"
         assert result.sec_user_id is None
         # 最终 URL 应为 iesdouyin.com/share/slides/ 长链
         assert "/share/slides/" in result.url, f"最终 URL 不含 /share/slides/：{result.url}"

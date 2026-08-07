@@ -72,16 +72,18 @@ def real_http_client(test_cookie: str) -> HttpClient:
     signer = Signer(user_agent=DEFAULT_USER_AGENT)
     repo = CookieRepository(conn)
     # 将用户 Cookie 作为测试 Cookie 插入内存数据库
-    repo.add(Cookie(
-        id=None,
-        content=test_cookie,
-        label="integration-test",
-        status="valid",
-        last_used=None,
-        last_check=None,
-        fail_count=0,
-        created_at=now_iso(),
-    ))
+    repo.add(
+        Cookie(
+            id=None,
+            content=test_cookie,
+            label="integration-test",
+            status="valid",
+            last_used=None,
+            last_check=None,
+            fail_count=0,
+            created_at=now_iso(),
+        )
+    )
     return HttpClient(repo, signer)
 
 
@@ -107,18 +109,16 @@ class TestFullChainSlides:
     # 类级别缓存，在 test_02 中设置，test_03 中读取
     _no_watermark_url: str | None = None
 
-    async def test_01_url_parser_extracts_aweme_id(
-        self, url_parser: URLParser
-    ) -> None:
+    async def test_01_url_parser_extracts_aweme_id(self, url_parser: URLParser) -> None:
         """步骤1：URLParser 从短链中解析出 aweme_id。"""
         result = await url_parser.parse(_SHORT_URL_SLIDES)
         assert result.type == "video", f"类型应为 video，实际为 {result.type}"
-        assert result.aweme_id == _SLIDES_AWEME_ID, (
-            f"aweme_id 应为 {_SLIDES_AWEME_ID}，实际为 {result.aweme_id}"
-        )
-        assert "/share/slides/" in result.url, (
-            f"最终 URL 应包含 /share/slides/，实际为 {result.url}"
-        )
+        assert (
+            result.aweme_id == _SLIDES_AWEME_ID
+        ), f"aweme_id 应为 {_SLIDES_AWEME_ID}，实际为 {result.aweme_id}"
+        assert (
+            "/share/slides/" in result.url
+        ), f"最终 URL 应包含 /share/slides/，实际为 {result.url}"
 
     async def test_02_video_parser_returns_video_info(
         self, video_parser: VideoParser, test_cookie: str
@@ -137,41 +137,39 @@ class TestFullChainSlides:
         video_info = await video_parser.parse_video(_SLIDES_AWEME_ID, test_cookie)
 
         # 基本信息
-        assert video_info.type == "image_set", (
-            f"类型应为 image_set（图文），实际为 {video_info.type}"
-        )
+        assert (
+            video_info.type == "image_set"
+        ), f"类型应为 image_set（图文），实际为 {video_info.type}"
         assert video_info.title, "标题不应为空"
         assert video_info.author, f"作者不应为空，当前 {video_info.author}"
         assert video_info.cover_url, "封面 URL 不应为空"
-        assert video_info.cover_url.startswith("http"), (
-            f"封面 URL 格式异常: {video_info.cover_url[:60]}"
-        )
+        assert video_info.cover_url.startswith(
+            "http"
+        ), f"封面 URL 格式异常: {video_info.cover_url[:60]}"
 
         # 图集验证
-        assert len(video_info.image_urls) > 0, (
-            f"图集应包含至少1张图片，当前 {len(video_info.image_urls)} 张"
-        )
+        assert (
+            len(video_info.image_urls) > 0
+        ), f"图集应包含至少1张图片，当前 {len(video_info.image_urls)} 张"
         for img_url in video_info.image_urls:
             assert img_url.startswith("http"), f"图片 URL 格式异常: {img_url[:60]}"
 
         # 无水印视频直链（图文也附带一个视频）
         assert video_info.no_watermark_url is not None, "无水印视频直链不应为空"
-        assert video_info.no_watermark_url.startswith("http"), (
-            f"无水印 URL 格式异常: {video_info.no_watermark_url[:60]}"
-        )
+        assert video_info.no_watermark_url.startswith(
+            "http"
+        ), f"无水印 URL 格式异常: {video_info.no_watermark_url[:60]}"
 
         # 验证发布时间格式化正确（ISO8601格式 YYYY-MM-DDTHH:MM:SSZ）
         assert video_info.publish_time is not None, "发布时间不应为 None"
-        assert "T" in video_info.publish_time and video_info.publish_time.endswith("Z"), (
-            f"发布时间应为 ISO8601 格式，当前: {video_info.publish_time}"
-        )
+        assert "T" in video_info.publish_time and video_info.publish_time.endswith(
+            "Z"
+        ), f"发布时间应为 ISO8601 格式，当前: {video_info.publish_time}"
 
         # 缓存 no_watermark_url 供下载测试使用
         TestFullChainSlides._no_watermark_url = video_info.no_watermark_url
 
-    async def test_03_download_video_to_local(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_03_download_video_to_local(self, tmp_path: Path) -> None:
         """步骤3：从 no_watermark_url 真实下载视频到本地并验证。
 
         验证要点：
@@ -180,9 +178,9 @@ class TestFullChainSlides:
         - 文件是有效的 MP4 格式（ftyp magic bytes）
         """
         no_watermark_url = TestFullChainSlides._no_watermark_url
-        assert no_watermark_url is not None, (
-            "test_02 未成功缓存 no_watermark_url，请确保测试按顺序执行"
-        )
+        assert (
+            no_watermark_url is not None
+        ), "test_02 未成功缓存 no_watermark_url，请确保测试按顺序执行"
 
         # 创建 Downloader 并执行下载
         dl, item = _make_downloader_with_item(
@@ -206,9 +204,7 @@ class TestFullChainSlides:
         with open(file_path, "rb") as f:
             header = f.read(12)
         # MP4 文件的第 4-8 字节为 ftyp（File Type Box）
-        assert header[4:8] == b"ftyp", (
-            f"非 MP4 文件格式，前 12 字节: {header.hex()}"
-        )
+        assert header[4:8] == b"ftyp", f"非 MP4 文件格式，前 12 字节: {header.hex()}"
 
 
 class TestFullChainVideo:
@@ -229,26 +225,24 @@ class TestFullChainVideo:
         video_info = await video_parser.parse_video(_SLIDES_AWEME_ID, test_cookie)
 
         # 图文类型
-        assert video_info.type == "image_set", (
-            f"类型应为 image_set，实际为 {video_info.type}"
-        )
+        assert video_info.type == "image_set", f"类型应为 image_set，实际为 {video_info.type}"
         assert video_info.title, "标题不应为空"
         assert video_info.author, f"作者不应为空，当前 {video_info.author}"
         assert video_info.cover_url, "封面 URL 不应为空"
 
         # 无水印视频直链（图文附带视频）
         assert video_info.no_watermark_url is not None, "无水印视频直链不应为空"
-        assert video_info.no_watermark_url.startswith("http"), (
-            f"无水印 URL 格式异常: {video_info.no_watermark_url[:60]}"
-        )
+        assert video_info.no_watermark_url.startswith(
+            "http"
+        ), f"无水印 URL 格式异常: {video_info.no_watermark_url[:60]}"
 
         # 图集图片
-        assert len(video_info.image_urls) > 0, (
-            f"图集应包含至少1张图片，当前 {len(video_info.image_urls)} 张"
-        )
+        assert (
+            len(video_info.image_urls) > 0
+        ), f"图集应包含至少1张图片，当前 {len(video_info.image_urls)} 张"
 
         # 发布时间
         assert video_info.publish_time is not None, "发布时间不应为 None"
-        assert "T" in video_info.publish_time and video_info.publish_time.endswith("Z"), (
-            f"发布时间应为 ISO8601 格式，当前: {video_info.publish_time}"
-        )
+        assert "T" in video_info.publish_time and video_info.publish_time.endswith(
+            "Z"
+        ), f"发布时间应为 ISO8601 格式，当前: {video_info.publish_time}"
