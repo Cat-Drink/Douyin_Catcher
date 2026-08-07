@@ -100,14 +100,23 @@ def video_parser(real_http_client: HttpClient) -> VideoParser:
     return VideoParser(real_http_client, signer)
 
 
+@pytest.fixture(scope="function")
+async def no_watermark_url(video_parser: VideoParser, test_cookie: str) -> str:
+    """获取图文分享的无水印视频直链。
+    
+    这个 fixture 确保每个测试都能获得所需的 URL，
+    即使之前的测试被跳过也能正常工作。
+    """
+    video_info = await video_parser.parse_video(_SLIDES_AWEME_ID, test_cookie)
+    assert video_info.no_watermark_url is not None, "无水印视频直链获取失败"
+    return video_info.no_watermark_url
+
+
 class TestFullChainSlides:
     """图文分享链接全链路测试。
 
     覆盖：短链 → URLParser → VideoParser → Downloader → 本地文件。
     """
-
-    # 类级别缓存，在 test_02 中设置，test_03 中读取
-    _no_watermark_url: str | None = None
 
     async def test_01_url_parser_extracts_aweme_id(self, url_parser: URLParser) -> None:
         """步骤1：URLParser 从短链中解析出 aweme_id。"""
@@ -166,10 +175,9 @@ class TestFullChainSlides:
             "Z"
         ), f"发布时间应为 ISO8601 格式，当前: {video_info.publish_time}"
 
-        # 缓存 no_watermark_url 供下载测试使用
-        TestFullChainSlides._no_watermark_url = video_info.no_watermark_url
-
-    async def test_03_download_video_to_local(self, tmp_path: Path) -> None:
+    async def test_03_download_video_to_local(
+        self, tmp_path: Path, no_watermark_url: str
+    ) -> None:
         """步骤3：从 no_watermark_url 真实下载视频到本地并验证。
 
         验证要点：
@@ -177,11 +185,6 @@ class TestFullChainSlides:
         - 本地文件存在且非空
         - 文件是有效的 MP4 格式（ftyp magic bytes）
         """
-        no_watermark_url = TestFullChainSlides._no_watermark_url
-        assert (
-            no_watermark_url is not None
-        ), "test_02 未成功缓存 no_watermark_url，请确保测试按顺序执行"
-
         # 创建 Downloader 并执行下载
         dl, item = _make_downloader_with_item(
             download_dir=str(tmp_path),
