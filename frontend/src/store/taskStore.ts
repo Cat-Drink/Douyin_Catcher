@@ -115,7 +115,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 		          }
 		          return fresh;
 		        });
-	        return { items: merged, tasks, loading: false };
+	        return { items: merged.sort((a, b) => b.id - a.id), tasks, loading: false };
 	      });
 	    } catch (e) {
 	      set({ error: e instanceof Error ? e.message : "加载任务失败", loading: false });

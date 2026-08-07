@@ -32,6 +32,7 @@ export default function BatchFetchPage() {
     batchLoading: loading,
     batchError: error,
     parseUrls,
+    clearBatch,
     removeBatchItems,
     downloadSelected,
   } = useParseStore();
@@ -89,6 +90,19 @@ export default function BatchFetchPage() {
     } catch (e) {
       addToast(e instanceof Error ? e.message : "下载入队失败", "error");
     }
+  };
+
+  const handleDeleteSelected = () => {
+    if (selected.size === 0) return;
+    removeBatchItems(selected);
+    setSelected(new Set());
+    addToast(`已删除 ${selected.size} 项`, "success");
+  };
+
+  const handleClearAll = () => {
+    clearBatch();
+    setSelected(new Set());
+    addToast("已清空所有解析结果", "success");
   };
 
   return (
@@ -218,6 +232,23 @@ export default function BatchFetchPage() {
             <span className="text-xs text-text-secondary flex-1">
               已选择 {selected.size} 个作品
             </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-warning"
+              disabled={selected.size === 0}
+              onClick={handleDeleteSelected}
+            >
+              删除选中
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-error"
+              onClick={handleClearAll}
+            >
+              清空结果
+            </Button>
             <Button disabled={selected.size === 0} onClick={handleDownload}>
               开始下载 ({selected.size})
             </Button>
