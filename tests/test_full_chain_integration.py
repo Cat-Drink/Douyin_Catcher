@@ -103,7 +103,7 @@ def video_parser(real_http_client: HttpClient) -> VideoParser:
 @pytest.fixture(scope="function")
 async def no_watermark_url(video_parser: VideoParser, test_cookie: str) -> str:
     """获取图文分享的无水印视频直链。
-    
+
     这个 fixture 确保每个测试都能获得所需的 URL，
     即使之前的测试被跳过也能正常工作。
     """
