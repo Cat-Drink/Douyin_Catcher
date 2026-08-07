@@ -32,6 +32,7 @@ export default function ProfileFetchPage() {
     profileLoading: loading,
     profileError: error,
     fetchHome,
+    clearProfile,
     removeProfileItems,
     downloadSelected,
   } = useParseStore();
@@ -79,6 +80,17 @@ export default function ProfileFetchPage() {
     } catch (e) {
       alert(e instanceof Error ? e.message : "下载入队失败");
     }
+  };
+
+  const handleDeleteSelected = () => {
+    if (selected.size === 0) return;
+    removeProfileItems(selected);
+    setSelected(new Set());
+  };
+
+  const handleClearAll = () => {
+    clearProfile();
+    setSelected(new Set());
   };
 
   return (
@@ -208,6 +220,23 @@ export default function ProfileFetchPage() {
             <span className="text-xs text-text-secondary flex-1">
               已选择 {selected.size} 个作品
             </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-warning"
+              disabled={selected.size === 0}
+              onClick={handleDeleteSelected}
+            >
+              删除选中
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-error"
+              onClick={handleClearAll}
+            >
+              清空结果
+            </Button>
             <Button disabled={selected.size === 0} onClick={handleDownload}>
               开始下载 ({selected.size})
             </Button>
