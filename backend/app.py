@@ -131,7 +131,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                                     100.0
                                     if update.status == "completed"
                                     else round(
-                                        (update.downloaded_bytes / max(update.total_bytes, 1)) * 100, 1
+                                        (update.downloaded_bytes / max(update.total_bytes, 1))
+                                        * 100,
+                                        1,
                                     )
                                 ),
                                 "status": update.status,
@@ -175,7 +177,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 # ===== FastAPI 应用 =====
 app = FastAPI(
     title="撷风拾影 Python Sidecar",
-    version="0.3.0",
+    version="0.3.2",
     lifespan=lifespan,
 )
 
