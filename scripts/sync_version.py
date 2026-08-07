@@ -56,7 +56,7 @@ VERSION_CONFIGS = [
     ),
     VersionConfig(
         file_path=PROJECT_ROOT / "frontend" / "src-tauri" / "src" / "lib.rs",
-        pattern=re.compile(r'"(0\.[0-9.]+)"\.to_string\(\)'),
+        pattern=re.compile(r'"(0\.\d+\.\d+)"\.to_string\(\)'),
         replacement_template='"{version}".to_string()',
         description="Rust 版本获取函数",
     ),

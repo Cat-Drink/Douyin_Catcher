@@ -66,7 +66,7 @@ def test_cookie() -> str:
 
 
 @pytest.fixture(scope="function")
-def real_http_client(test_cookie: str) -> HttpClient:
+def real_http_client(test_cookie: str):
     """返回注入真实 Cookie 的 HttpClient 实例。"""
     conn = get_memory_connection()
     signer = Signer(user_agent=DEFAULT_USER_AGENT)
@@ -84,7 +84,10 @@ def real_http_client(test_cookie: str) -> HttpClient:
             created_at=now_iso(),
         )
     )
-    return HttpClient(repo, signer)
+    http_client = HttpClient(repo, signer)
+    yield http_client
+    # 清理：关闭数据库连接
+    conn.close()
 
 
 @pytest.fixture(scope="function")

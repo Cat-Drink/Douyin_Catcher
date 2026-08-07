@@ -60,7 +60,11 @@ def run_sync() -> bool:
         result = subprocess.run(
             [sys.executable, str(script_path), "sync"],
             cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
         )
+        if result.returncode != 0:
+            print(f"❌ 同步版本号失败:\n{result.stderr}", file=sys.stderr)
         return result.returncode == 0
     except Exception as e:
         print(f"❌ 运行 sync_version.py 失败: {e}", file=sys.stderr)
