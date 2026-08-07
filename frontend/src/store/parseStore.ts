@@ -16,7 +16,6 @@ export interface ParsedResult {
   imageCount?: number;
   noWatermarkUrl?: string;
   imageUrls?: string[];
-  publishedAt?: string;
   error?: string;
 }
 
@@ -58,33 +57,25 @@ export const useParseStore = create<ParseStore>((set) => ({
   profileLoading: false,
   profileError: null,
 
-parseUrls: async (urls: string[]) => {
-    set({ batchLoading: true, batchError: null }); // 不再清空 batchResults（追加模式）
+  parseUrls: async (urls: string[]) => {
+    set({ batchLoading: true, batchError: null, batchResults: [] });
     try {
       const rawResults = await api.parseUrls(urls);
-      set((state) => {
-        const offset = state.batchResults.length;
-        const results: ParsedResult[] = rawResults.map((r: any, i: number) => ({
-          index: offset + i,
-          url: urls[i] || r.url || "",
-          title: r.title || "",
-          author: r.author || "",
-          type: (r.type as ParsedResult["type"]) || "video",
-          awemeId: r.aweme_id,
-          coverUrl: r.cover_url,
-          duration: r.duration,
-          imageCount: r.image_count,
-          noWatermarkUrl: r.no_watermark_url || undefined,
-          imageUrls: r.image_urls || undefined,
-          publishedAt: r.publish_time || undefined,
-          error: r.error || undefined,
-        }));
-        return {
-          // 追加模式：按输入顺序排列表格，新结果追加在底部
-          batchResults: [...state.batchResults, ...results],
-          batchLoading: false,
-        };
-      });
+      const results: ParsedResult[] = rawResults.map((r: any, i: number) => ({
+        index: i,
+        url: urls[i] || r.url || "",
+        title: r.title || "",
+        author: r.author || "",
+        type: (r.type as ParsedResult["type"]) || "video",
+        awemeId: r.aweme_id,
+        coverUrl: r.cover_url,
+        duration: r.duration,
+        imageCount: r.image_count,
+        noWatermarkUrl: r.no_watermark_url || undefined,
+        imageUrls: r.image_urls || undefined,
+        error: r.error || undefined,
+      }));
+      set({ batchResults: results, batchLoading: false });
     } catch (e) {
       set({
         batchError: e instanceof Error ? e.message : "解析失败",
@@ -104,31 +95,23 @@ parseUrls: async (urls: string[]) => {
   },
 
   fetchHome: async (url: string, maxItems = 50) => {
-    set({ profileLoading: true, profileError: null }); // 不再清空 profileResults（追加模式）
+    set({ profileLoading: true, profileError: null, profileResults: [] });
     try {
       const result = await api.fetchHome(url, maxItems);
-      set((state) => {
-        const offset = state.profileResults.length;
-        const results: ParsedResult[] = (result.items || []).map((r: any, i: number) => ({
-          index: offset + i,
-          url: r.url || "",
-          title: r.title || "",
-          author: r.author || "",
-          type: (r.type as ParsedResult["type"]) || "video",
-          awemeId: r.aweme_id,
-          coverUrl: r.cover_url,
-          duration: r.duration,
-          imageCount: r.image_count,
-          noWatermarkUrl: r.no_watermark_url || undefined,
-          imageUrls: r.image_urls || undefined,
-          publishedAt: r.publish_time || undefined,
-        }));
-        return {
-          // 追加模式：新结果追加在底部，按抓取顺序排列
-          profileResults: [...state.profileResults, ...results],
-          profileLoading: false,
-        };
-      });
+      const results: ParsedResult[] = (result.items || []).map((r: any, i: number) => ({
+        index: i,
+        url: r.url || "",
+        title: r.title || "",
+        author: r.author || "",
+        type: (r.type as ParsedResult["type"]) || "video",
+        awemeId: r.aweme_id,
+        coverUrl: r.cover_url,
+        duration: r.duration,
+        imageCount: r.image_count,
+        noWatermarkUrl: r.no_watermark_url || undefined,
+        imageUrls: r.image_urls || undefined,
+      }));
+      set({ profileResults: results, profileLoading: false });
     } catch (e) {
       set({
         profileError: e instanceof Error ? e.message : "抓取失败",

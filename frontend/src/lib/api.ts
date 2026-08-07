@@ -136,10 +136,6 @@ export async function clearCompleted(): Promise<{ message: string }> {
   return request("/download/clear-completed", { method: "POST" });
 }
 
-export async function verifyCompletedFiles(): Promise<{ verified_count: number; missing_count: number; missing_items: { id: number; aweme_id: string | null; title: string | null; local_path: string | null }[] }> {
-  return request("/download/verify", { method: "POST" });
-}
-
 // ============ 爬虫 API ============
 
 export async function parseUrls(urls: string[]): Promise<any[]> {
