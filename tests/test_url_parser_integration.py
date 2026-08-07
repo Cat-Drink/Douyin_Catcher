@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import httpx
 import pytest
 
 from crawlers.http_client import HttpClient
@@ -50,8 +49,8 @@ def test_cookie() -> str:
 @pytest.fixture
 def real_http_client() -> HttpClient:
     """返回一个真实 HttpClient 实例（不依赖 Cookie 池，仅用于短链重定向）。"""
-    from app.repositories import CookieRepository
     from app.database import get_memory_connection
+    from app.repositories import CookieRepository
 
     conn = get_memory_connection()
     signer = Signer(user_agent=DEFAULT_USER_AGENT)
@@ -135,8 +134,9 @@ class TestParse:
     async def test_parse_short_url_video(self, url_parser: URLParser) -> None:
         """普通视频短链 → 完整解析 → type=video, aweme_id 正确。"""
         # mock follow_redirect 返回已知视频长链
+        from unittest.mock import MagicMock
+
         import httpx
-        from unittest.mock import AsyncMock, MagicMock
 
         # 使用真实 HttpClient 但 mock 响应
         mock_response = MagicMock(spec=httpx.Response)

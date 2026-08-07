@@ -224,7 +224,11 @@ class URLParser:
         # 路径形式：取 /video/ /vsdetail/ /mix/ /collection/ /share/slides/ 后的段
         path_parts = (parsed.path or "").split("/")
         for i, part in enumerate(path_parts):
-            if part in ("video", "vsdetail", "mix", "collection", "slides") and i + 1 < len(path_parts) and path_parts[i + 1]:
+            if (
+                part in ("video", "vsdetail", "mix", "collection", "slides")
+                and i + 1 < len(path_parts)
+                and path_parts[i + 1]
+            ):
                 return path_parts[i + 1]
         return None
 

@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 import sys
 import tomllib
@@ -191,7 +190,7 @@ def validate_tag(tag: str) -> bool:
             mismatches.append((desc, version, tag_version))
 
     if mismatches:
-        print(f"\n❌ 版本号检查失败！存在不匹配:\n")
+        print("\n❌ 版本号检查失败！存在不匹配:\n")
         for desc, actual, expected in mismatches:
             print(f"  {desc}:")
             print(f"    实际: {actual}")

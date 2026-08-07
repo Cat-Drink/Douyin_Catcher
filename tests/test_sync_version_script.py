@@ -3,11 +3,7 @@
 from __future__ import annotations
 
 import re
-import tempfile
 from pathlib import Path
-from unittest.mock import patch
-
-import pytest
 
 
 # 导入脚本中的函数（需要在 PATH 中）
