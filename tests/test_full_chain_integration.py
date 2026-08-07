@@ -175,9 +175,7 @@ class TestFullChainSlides:
             "Z"
         ), f"发布时间应为 ISO8601 格式，当前: {video_info.publish_time}"
 
-    async def test_03_download_video_to_local(
-        self, tmp_path: Path, no_watermark_url: str
-    ) -> None:
+    async def test_03_download_video_to_local(self, tmp_path: Path, no_watermark_url: str) -> None:
         """步骤3：从 no_watermark_url 真实下载视频到本地并验证。
 
         验证要点：
