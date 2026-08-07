@@ -58,39 +58,40 @@ export const useParseStore = create<ParseStore>((set) => ({
   profileLoading: false,
   profileError: null,
 
-  parseUrls: async (urls: string[]) => {
-    set({ batchLoading: true, batchError: null }); // 不再清空 batchResults（追加模式）
-    try {
-      const rawResults = await api.parseUrls(urls);
-      set((state) => {
-        const offset = state.batchResults.length;
-        const results: ParsedResult[] = rawResults.map((r: any, i: number) => ({
-          index: offset + i,
-          url: urls[i] || r.url || "",
-          title: r.title || "",
-          author: r.author || "",
-          type: (r.type as ParsedResult["type"]) || "video",
-          awemeId: r.aweme_id,
-          coverUrl: r.cover_url,
-          duration: r.duration,
-          imageCount: r.image_count,
-          noWatermarkUrl: r.no_watermark_url || undefined,
-          imageUrls: r.image_urls || undefined,
-          publishedAt: r.publish_time || undefined,
-          error: r.error || undefined,
-        }));
-        return {
-          batchResults: [...state.batchResults, ...results],
-          batchLoading: false,
-        };
-      });
-    } catch (e) {
-      set({
-        batchError: e instanceof Error ? e.message : "解析失败",
-        batchLoading: false,
-      });
-    }
-  },
+parseUrls: async (urls: string[]) => {
+	    set({ batchLoading: true, batchError: null }); // 不再清空 batchResults（追加模式）
+	    try {
+	      const rawResults = await api.parseUrls(urls);
+	      set((state) => {
+	        const offset = state.batchResults.length;
+	        const results: ParsedResult[] = rawResults.map((r: any, i: number) => ({
+	          index: i, // 新结果在最前，索引从 0 开始
+	          url: urls[i] || r.url || "",
+	          title: r.title || "",
+	          author: r.author || "",
+	          type: (r.type as ParsedResult["type"]) || "video",
+	          awemeId: r.aweme_id,
+	          coverUrl: r.cover_url,
+	          duration: r.duration,
+	          imageCount: r.image_count,
+	          noWatermarkUrl: r.no_watermark_url || undefined,
+	          imageUrls: r.image_urls || undefined,
+	          publishedAt: r.publish_time || undefined,
+	          error: r.error || undefined,
+	        }));
+	        return {
+	          // 新结果在最顶端，旧结果排后面，整体重新编号
+	          batchResults: [...results, ...state.batchResults].map((item, i) => ({ ...item, index: i })),
+	          batchLoading: false,
+	        };
+	      });
+	    } catch (e) {
+	      set({
+	        batchError: e instanceof Error ? e.message : "解析失败",
+	        batchLoading: false,
+	      });
+	    }
+	  },
 
   clearBatch: () => {
     set({ batchResults: [], batchError: null });
@@ -107,9 +108,8 @@ export const useParseStore = create<ParseStore>((set) => ({
     try {
       const result = await api.fetchHome(url, maxItems);
       set((state) => {
-        const offset = state.profileResults.length;
         const results: ParsedResult[] = (result.items || []).map((r: any, i: number) => ({
-          index: offset + i,
+          index: i,
           url: r.url || "",
           title: r.title || "",
           author: r.author || "",
@@ -123,7 +123,8 @@ export const useParseStore = create<ParseStore>((set) => ({
           publishedAt: r.publish_time || undefined,
         }));
         return {
-          profileResults: [...state.profileResults, ...results],
+          // 新结果在最顶端，旧结果排后面，整体重新编号
+          profileResults: [...results, ...state.profileResults].map((item, i) => ({ ...item, index: i })),
           profileLoading: false,
         };
       });
