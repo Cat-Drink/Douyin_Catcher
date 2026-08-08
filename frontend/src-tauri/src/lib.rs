@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    Manager,
+    Manager, include_image,
 };
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
@@ -49,8 +49,12 @@ pub fn run() {
             let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
+            // 构建托盘图标（使用项目图标，避免默认透明图标）
+            let icon = include_image!("icons/icon.ico");
+
             // 构建托盘图标（使用唯一 ID 避免重复）
-            let _tray = TrayIconBuilder::new("main-tray")
+            let _tray = TrayIconBuilder::new()
+                .icon(icon)
                 .menu(&menu)
                 .tooltip("撷风拾影")
                 .on_menu_event(|app, event| {
