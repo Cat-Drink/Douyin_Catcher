@@ -230,7 +230,9 @@ export default function SubscriptionPanel() {
 
         {/* 订阅列表 */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto px-10 pt-2 pb-4">
+          {/* 左内边距须让卡片左缘（pl-16 + pl-24 = 160px）离开悬浮 Dock 的展开判定圈
+              （距主球中心 138px），否则鼠标移向收起箭头会触发 Dock 弹出、点击被遮罩吞掉 */}
+          <div className="flex-1 overflow-y-auto pl-24 pr-10 pt-2 pb-4">
         {loading && subscriptions.length === 0 ? (
           <div className="flex items-center justify-center py-16 text-text-disabled">
             <Loader2 size={32} className="mr-3 animate-spin" />
