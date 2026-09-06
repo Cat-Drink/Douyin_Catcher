@@ -4,9 +4,9 @@ import { SlidePanel } from "../components/app/SlidePanel";
 import SettingsPanel from "../components/app/SettingsPanel";
 import CookiePanel from "../components/app/CookiePanel";
 import { Outlet, useLocation } from "react-router-dom";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { usePanelStore } from "../store/panelStore";
-import { pageVariants, pageTransition } from "../lib/motion";
+import { pageTransition } from "../lib/motion";
 
 export function AppShell() {
   const { activePanel, closePanel } = usePanelStore();
@@ -18,20 +18,16 @@ export function AppShell() {
       <div className="relative flex-1 overflow-hidden">
         {/* 悬浮球/感应式抽屉导航（替代传统侧边栏） */}
         <FloatingDock />
-        {/* 路由切换弹性过渡：opacity 0->1 + y 12->0 */}
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.main
-            key={location.pathname}
-            variants={pageVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            transition={pageTransition}
-            className="h-full flex flex-col overflow-hidden pl-16"
-          >
-            <Outlet />
-          </motion.main>
-        </AnimatePresence>
+        {/* 路由切换弹性过渡：opacity 0->1 + y 12->0（纯入场动画，避免 exit 协调卡死白屏） */}
+        <motion.main
+          key={location.pathname}
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={pageTransition}
+          className="h-full flex flex-col overflow-hidden pl-16"
+        >
+          <Outlet />
+        </motion.main>
       </div>
 
       {/* 侧滑面板 */}

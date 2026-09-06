@@ -26,17 +26,10 @@ export const springMorph: Transition = {
   damping: 30,
 };
 
-/** 页面/Tab 切换：opacity 0->1 + y 12->0，250~350ms */
+/** 页面/Tab 切换：opacity 0->1 + y 12->0，250~350ms（纯入场动画，配合 key 重挂载） */
 export const pageTransition: Transition = {
   duration: 0.3,
   ease: EASE_OUT_EXPO,
-};
-
-/** 页面切换 variants，配合 AnimatePresence 使用 */
-export const pageVariants: Variants = {
-  initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -8, transition: { duration: 0.18, ease: "easeIn" } },
 };
 
 /** 悬浮上浮 + 阴影扩散 */

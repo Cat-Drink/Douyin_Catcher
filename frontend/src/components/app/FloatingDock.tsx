@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Download, Link2, User, Monitor, Sparkles, X } from "lucide-react";
+import { Download, Link2, User, Monitor, Sparkles } from "lucide-react";
 import { cn } from "../../lib/utils";
 
 const navItems = [
@@ -11,12 +11,12 @@ const navItems = [
   { id: "download", path: "/download", label: "下载任务", icon: Download },
 ];
 
-/** 半圆环展开：半径与角度（右半圆，自上而下 -90° -> 90°） */
+/** 半圆环展开：半径与角度（右半圆，自上而下：-90° 弧顶 -> 90° 弧底） */
 const RADIUS = 86;
 const ANGLES = [-90, -30, 30, 90];
 const arcPos = (deg: number) => ({
   x: Math.round(RADIUS * Math.cos((deg * Math.PI) / 180)),
-  y: -Math.round(RADIUS * Math.sin((deg * Math.PI) / 180)),
+  y: Math.round(RADIUS * Math.sin((deg * Math.PI) / 180)),
 });
 
 /**
@@ -139,25 +139,24 @@ export function FloatingDock() {
           );
         })}
 
-        {/* 主悬浮球 */}
+        {/* 主悬浮球：点击固定展开（收起由移出/遮罩/切页触发，避免与 hover 展开竞态） */}
         <motion.button
           className="absolute flex items-center justify-center w-12 h-12 -ml-6 -mt-6 rounded-full glass-surface press-feedback shadow-[0_4px_20px_rgba(124,58,237,0.25)]"
-          onClick={() => setExpanded((v) => !v)}
+          onClick={() => {
+            cancelCollapse();
+            setExpanded(true);
+          }}
           whileHover={{ scale: 1.08 }}
           whileTap={{ scale: 0.94 }}
-          title={expanded ? "收起导航" : "展开导航"}
-          aria-label={expanded ? "收起导航" : "展开导航"}
+          title="展开导航"
+          aria-label="展开导航"
         >
           <motion.span
-            animate={{ rotate: expanded ? 90 : 0 }}
+            animate={{ rotate: expanded ? 45 : 0 }}
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
             className="flex items-center justify-center"
           >
-            {expanded ? (
-              <X size={20} className="text-text-primary" />
-            ) : (
-              <Sparkles size={20} className="text-purple-500" />
-            )}
+            <Sparkles size={20} className="text-purple-500" />
           </motion.span>
         </motion.button>
       </div>
