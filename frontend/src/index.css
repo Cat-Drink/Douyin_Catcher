@@ -56,6 +56,113 @@
   --shadow-card-hover: 0 4px 6px rgba(0,0,0,0.08);
   --shadow-dialog: 0 10px 20px rgba(0,0,0,0.10);
   --shadow-overlay: 0 20px 40px rgba(0,0,0,0.15);
+
+  /* Motion & surface tokens —— 全局动效系统 (feat/uiux-redesign) */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --surface-glass-light: rgba(255, 255, 255, 0.72);
+  --surface-glass-dark: rgba(24, 24, 28, 0.72);
+  --glow-ring: 0 0 0 1px rgba(124, 58, 237, 0.35), 0 0 24px rgba(124, 58, 237, 0.18);
+}
+
+.dark {
+  --surface-glass-light: var(--surface-glass-dark);
+}
+
+/* ---- 毛玻璃表面（Dock / Hero 卡片） ---- */
+.glass-surface {
+  background: var(--surface-glass-light);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  border: 1px solid rgba(124, 58, 237, 0.10);
+}
+.dark .glass-surface {
+  border-color: rgba(179, 136, 255, 0.12);
+}
+
+/* ---- Focus 光晕脉冲 (Glow Ring) ---- */
+.glow-focus {
+  transition: box-shadow 0.25s var(--ease-out-expo), transform 0.25s var(--ease-out-expo),
+    border-color 0.25s var(--ease-out-expo);
+}
+.glow-focus:focus-within {
+  box-shadow: var(--glow-ring);
+  transform: scale(1.008);
+  border-color: rgba(124, 58, 237, 0.45);
+  animation: glow-pulse 2.4s ease-in-out infinite;
+}
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.30), 0 0 18px rgba(124, 58, 237, 0.14); }
+  50% { box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.45), 0 0 32px rgba(124, 58, 237, 0.24); }
+}
+
+/* ---- 解析中：卡片边缘流动极光呼吸边框 ---- */
+.aurora-border {
+  position: relative;
+}
+.aurora-border::before {
+  content: "";
+  position: absolute;
+  inset: -1.5px;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--aurora-angle, 0deg),
+    #7c3aed, #b388ff, #3b82f6, #10b981, #7c3aed
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: aurora-spin 3s linear infinite, aurora-breathe 2.4s ease-in-out infinite;
+  pointer-events: none;
+  opacity: 0.9;
+}
+@property --aurora-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+@keyframes aurora-spin {
+  to { --aurora-angle: 360deg; }
+}
+@keyframes aurora-breathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* ---- 渐变描边卡片（Ambient 弥散阴影 + 细微渐变描边） ---- */
+.hero-card {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 8px 24px rgba(23, 12, 48, 0.08),
+    0 24px 64px rgba(23, 12, 48, 0.10);
+  border: 1px solid rgba(124, 58, 237, 0.14);
+}
+.dark .hero-card {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 8px 24px rgba(0, 0, 0, 0.35),
+    0 24px 64px rgba(0, 0, 0, 0.45);
+  border-color: rgba(179, 136, 255, 0.16);
+}
+
+/* ---- 微交互工具类：仅 transform/opacity，保证 GPU 60fps ---- */
+.press-feedback {
+  transition: transform 0.15s var(--ease-out-expo);
+}
+.press-feedback:active {
+  transform: scale(0.96);
+}
+.lift-hover {
+  transition: transform 0.2s var(--ease-out-expo);
+}
+.lift-hover:hover {
+  transform: translateY(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora-border::before { animation: none; }
+  .glow-focus:focus-within { animation: none; }
 }
 
 /* Dark mode overrides */

@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import {
   Loader2,
   AlertCircle,
-  Plus,
   RefreshCw,
   Trash2,
   Download,
@@ -10,11 +9,11 @@ import {
   ChevronRight,
   ChevronDown,
 } from "lucide-react";
-import { Input } from "../ui/input";
 import { Button } from "../ui/button";
 import { Badge, badgeTypeLabels } from "../ui/badge";
 import { proxyImageUrl } from "../../lib/api";
 import { useSubscriptionStore } from "../../store/subscriptionStore";
+import { HeroSection, HeroActions, ParseButton } from "./Hero";
 
 /** ISO8601 时间戳 → 短格式展示 */
 function formatTime(iso: string | null | undefined): string {
@@ -174,71 +173,71 @@ export default function SubscriptionPanel() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* 添加订阅表单 */}
-      <div className="p-6 pb-3">
-        <div className="flex gap-2 items-center">
-          <Input
-            placeholder="粘贴用户主页链接，例如 https://www.douyin.com/user/xxxxx"
-            value={urlInput}
-            onChange={(e) => setUrlInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-          />
-          <select
-            className="h-8 px-2 rounded-sm border border-border-default bg-bg-input text-sm text-text-primary outline-none focus:border-purple-500"
-            value={intervalMinutes}
-            onChange={(e) => setIntervalMinutes(Number(e.target.value))}
-            title="扫描间隔"
-          >
-            {[5, 10, 15, 30, 60, 120, 180, 360, 720, 1440].map((n) => (
-              <option key={n} value={n}>
-                {formatInterval(n)}
-              </option>
-            ))}
-          </select>
-          <Button onClick={handleAdd} disabled={!urlInput.trim() || adding}>
-            {adding ? (
-              <>
-                <Loader2 size={16} className="mr-1 animate-spin" />
-                添加中
-              </>
-            ) : (
-              <>
-                <Plus size={16} className="mr-1" />
-                订阅
-              </>
-            )}
-          </Button>
-        </div>
-        <p className="mt-2 text-xs text-text-secondary">
-          订阅后每 {formatInterval(intervalMinutes)} 自动扫描一次该用户主页，
-          发现新作品会出现在下方列表中，可选择下载或跳过。
-        </p>
-      </div>
-
-      {/* 错误提示 */}
-      {error && (
-        <div className="mx-6 mb-3 p-3 bg-red-50 border border-red-200 rounded-sm">
-          <div className="flex items-center gap-2 text-sm text-error">
-            <AlertCircle size={16} />
-            <span>{error}</span>
+      <HeroSection
+        hasResults={subscriptions.length > 0}
+        loading={adding}
+        hero={
+          <>
+            <div className="p-4 pb-2">
+              <div className="flex items-center gap-2">
+                <input
+                  placeholder="粘贴用户主页链接，例如 https://www.douyin.com/user/xxxxx"
+                  value={urlInput}
+                  onChange={(e) => setUrlInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+                  className="flex-1 h-9 px-3 rounded-lg bg-transparent border-0 outline-none text-sm text-text-primary placeholder:text-text-disabled focus:ring-0"
+                />
+              </div>
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                <span className="px-2 py-1 text-xs text-text-disabled self-center">
+                  每 {formatInterval(intervalMinutes)} 自动扫描一次该主页，发现新作品可在下方选择下载或跳过
+                </span>
+              </div>
+            </div>
+            <HeroActions>
+              <select
+                className="h-9 px-3 rounded-lg glass-surface text-xs text-text-secondary outline-none cursor-pointer"
+                value={intervalMinutes}
+                onChange={(e) => setIntervalMinutes(Number(e.target.value))}
+                title="扫描间隔"
+              >
+                {[5, 10, 15, 30, 60, 120, 180, 360, 720, 1440].map((n) => (
+                  <option key={n} value={n}>
+                    {formatInterval(n)}
+                  </option>
+                ))}
+              </select>
+              <span className="flex-1" />
+              <ParseButton
+                label="订阅"
+                disabled={!urlInput.trim()}
+                loading={adding}
+                onClick={handleAdd}
+              />
+            </HeroActions>
+          </>
+        }
+      >
+        {/* 错误提示 */}
+        {error && (
+          <div className="mx-auto w-full max-w-[42rem] px-6 mt-2">
+            <div className="flex items-center gap-2 p-3 bg-error/10 border border-error/20 rounded-xl text-sm text-error">
+              <AlertCircle size={16} />
+              <span>{error}</span>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="border-t border-border-light" />
-
-      {/* 订阅列表 */}
-      <div className="flex-1 overflow-y-auto p-6 pt-4">
+        {/* 订阅列表 */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto px-10 pt-2 pb-4">
         {loading && subscriptions.length === 0 ? (
           <div className="flex items-center justify-center py-16 text-text-disabled">
             <Loader2 size={32} className="mr-3 animate-spin" />
             <span className="text-sm">加载订阅中...</span>
           </div>
         ) : subscriptions.length === 0 ? (
-          <div className="text-center py-16 text-text-disabled">
-            <div className="text-4xl mb-3 opacity-50">⏰</div>
-            <p className="text-sm">还没有订阅，粘贴用户主页链接开始订阅</p>
-          </div>
+          <div />
         ) : (
           <div className="space-y-3">
             {subscriptions.map((sub) => {
@@ -439,7 +438,9 @@ export default function SubscriptionPanel() {
             })}
           </div>
         )}
-      </div>
+          </div>
+        </div>
+      </HeroSection>
     </div>
   );
 }

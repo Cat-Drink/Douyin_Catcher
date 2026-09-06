@@ -8,11 +8,9 @@ import { useWebSocket } from "../hooks/useWebSocket";
 import { useToastStore } from "../store/toastStore";
 import { useUiInputStore } from "../store/uiInputStore";
 import * as api from "../lib/api";
-import { useNavigate } from "react-router-dom";
 import type { WsMessage } from "../hooks/useWebSocket";
 
 export default function DownloadPage() {
-  const navigate = useNavigate();
   const { downloadSearch: search, setDownloadSearch: setSearch } = useUiInputStore();
   const {
     items, loading, error,
@@ -156,20 +154,14 @@ export default function DownloadPage() {
             <p className="text-sm">正在加载任务列表...</p>
           </div>
         ) : filtered.length === 0 && !error ? (
-          <div className="flex flex-col items-center justify-center h-full text-text-disabled">
-            <div className="text-4xl mb-3">📥</div>
-            <p className="text-base font-medium text-text-primary">
-              {search ? "没有匹配的任务" : "还没有下载任务"}
-            </p>
-            <p className="text-sm mt-1">
-              {search ? "试试其他关键词" : "前往链接抓取页添加链接"}
-            </p>
-            {!search && (
-              <Button className="mt-4" size="sm" onClick={() => navigate("/batch-fetch")}>
-                去添加链接
-              </Button>
-            )}
-          </div>
+          search ? (
+            <div className="flex flex-col items-center justify-center h-full text-text-disabled">
+              <p className="text-base font-medium text-text-primary">没有匹配的任务</p>
+              <p className="text-sm mt-1">试试其他关键词</p>
+            </div>
+          ) : (
+            <div />
+          )
         ) : (
           <div>
             {filtered.map((task) => (

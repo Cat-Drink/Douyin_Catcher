@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from "react";
-import { Loader2, AlertCircle, Upload, Monitor, KeyRound, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import { motion } from "framer-motion";
+import { Loader2, AlertCircle, Upload, KeyRound, ChevronDown, Trash2 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
+import { cn } from "../lib/utils";
+import { HeroSection, HeroActions, HeroChip, HeroTextarea, ParseButton } from "../components/app/Hero";
 import * as api from "../lib/api";
 import { useToastStore } from "../store/toastStore";
 
@@ -436,140 +438,130 @@ export default function BiliFetchPage() {
     addToast(`已删除 ${selected.size} 项`, "success");
   };
 
+  /** Cookie 状态芯片的展示信息 */
+  const cookieStatus = !cookieSaved
+    ? { text: "Cookie 未配置 · 720P", icon: "text-text-secondary", dot: "bg-text-disabled" }
+    : cookieValid === false
+      ? { text: "Cookie 已失效", icon: "text-error", dot: "bg-error" }
+      : {
+          text: `1080P 已解锁${cookieNickname ? " · " + cookieNickname : ""}`,
+          icon: "text-success",
+          dot: "bg-success",
+        };
+
   return (
     <div className="flex flex-col h-full">
+      <HeroSection
+        hasResults={results.length > 0}
+        loading={loading}
+        hero={
+      <>
       {/* Input Area */}
-      <div className="p-6 pb-0">
-        {/* Cookie Config Bar */}
-        <div className="mb-3 p-3 bg-bg-gray/60 border border-border-light rounded-sm">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs">
-              <KeyRound size={14} className="text-purple-500" />
-              <span className="font-medium text-text-primary">B 站 Cookie</span>
-              {cookieSaved ? (
-                cookieValid === true ? (
-                  <span className="px-1.5 py-0.5 rounded text-[11px] bg-green-50 text-green-700 border border-green-200">
-                    已配置（1080P 解锁{cookieNickname ? " · " + cookieNickname : ""}）
-                  </span>
-                ) : cookieValid === false ? (
-                  <span className="px-1.5 py-0.5 rounded text-[11px] bg-red-50 text-red-700 border border-red-200">
-                    Cookie 已失效
-                  </span>
-                ) : (
-                  <span className="px-1.5 py-0.5 rounded text-[11px] bg-purple-50 text-purple-700 border border-purple-200">
-                    已配置（1080P）
-                  </span>
-                )
-              ) : (
-                <span className="px-1.5 py-0.5 rounded text-[11px] bg-gray-100 text-text-secondary">
-                  未配置（最高 720P）
-                </span>
-              )}
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-xs h-6 px-2 text-purple-600 hover:text-purple-700"
-              onClick={() => setCookiePanelOpen(!cookiePanelOpen)}
-            >
-              {cookiePanelOpen ? (
-                <>
-                  <ChevronUp size={12} className="mr-1" /> 收起
-                </>
-              ) : (
-                <>
-                  <ChevronDown size={12} className="mr-1" />
-                  {cookieSaved ? "修改 Cookie" : "配置 Cookie 解锁 1080P"}
-                </>
-              )}
-            </Button>
-          </div>
+      <div className="p-4 pb-2">
+        <HeroTextarea
+          placeholder="在此粘贴 B 站视频链接（BV 号 / av 号），每行一个&#10;例如：https://www.bilibili.com/video/BV1GJ411x7h"
+          value={links}
+          onChange={(e) => setLinks(e.target.value)}
+        />
+        <div className="flex flex-wrap gap-1.5 pt-1">
+          <HeroChip onClick={() => setLinks("https://www.bilibili.com/video/BV1GJ411x7h")}>
+            BV 链接示例
+          </HeroChip>
+          <span className="px-2 py-1 text-xs text-text-disabled self-center">
+            每行一个链接，支持多 P 选择性下载
+          </span>
+        </div>
 
-          {cookiePanelOpen && (
-            <div className="mt-3 pt-3 border-t border-border-light flex flex-col gap-2">
-              <div className="flex gap-2">
-                <Input
-                  type="password"
-                  placeholder="粘贴 B 站 Cookie（含 SESSDATA=...）"
-                  value={cookieInput}
-                  onChange={(e) => setCookieInput(e.target.value)}
-                  className="flex-1 text-xs"
+        {/* Cookie 配置面板：由下方操作栏的 Cookie 按钮展开 */}
+        {cookiePanelOpen && (
+          <div className="mt-3 rounded-xl border border-border-light bg-bg-gray/60 p-3 flex flex-col gap-2">
+            <div className="flex gap-2">
+              <Input
+                type="password"
+                placeholder="粘贴 B 站 Cookie（含 SESSDATA=...）"
+                value={cookieInput}
+                onChange={(e) => setCookieInput(e.target.value)}
+                className="flex-1 text-xs"
+                disabled={cookieBusy}
+              />
+              <Button
+                size="sm"
+                className="text-xs"
+                onClick={handleCookieSave}
+                disabled={!cookieInput.trim() || cookieBusy}
+              >
+                {cookieBusy ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
+                保存并测试
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="text-xs"
+                onClick={handleCookieTest}
+                disabled={!cookieInput.trim() || cookieBusy}
+              >
+                测试
+              </Button>
+              {cookieSaved && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-error hover:text-red-700 px-2"
+                  onClick={handleCookieClear}
                   disabled={cookieBusy}
-                />
-                <Button
-                  size="sm"
-                  className="text-xs"
-                  onClick={handleCookieSave}
-                  disabled={!cookieInput.trim() || cookieBusy}
+                  title="清除已保存的 Cookie"
                 >
-                  {cookieBusy ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
-                  保存并测试
+                  <Trash2 size={14} />
                 </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="text-xs"
-                  onClick={handleCookieTest}
-                  disabled={!cookieInput.trim() || cookieBusy}
-                >
-                  测试
-                </Button>
-                {cookieSaved && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs text-error hover:text-red-700 px-2"
-                    onClick={handleCookieClear}
-                    disabled={cookieBusy}
-                    title="清除已保存的 Cookie"
-                  >
-                    <Trash2 size={14} />
-                  </Button>
-                )}
-              </div>
-              <p className="text-[11px] text-text-secondary">
-                提示：在浏览器登录 B 站，按 F12 → 网络 → 复制任意请求中的 Cookie（需包含 SESSDATA）。配置后可解锁 1080P 画质，大会员账号可解锁更高画质。不配置时默认最高 720P。
-              </p>
+              )}
             </div>
-          )}
-        </div>
-
-        <div className="flex gap-2">
-          <Textarea
-            placeholder="在此粘贴 B 站视频链接（BV 号 / av 号），每行一个&#10;例如：https://www.bilibili.com/video/BV1GJ411x7h"
-            value={links}
-            onChange={(e) => setLinks(e.target.value)}
-            className="flex-1"
-          />
-          <Button
-            variant="secondary"
-            className="h-auto flex-col gap-1 px-4"
-            onClick={handleFileImport}
-          >
-            <Upload size={20} />
-            <span className="text-xs">导入文件</span>
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".txt,.csv"
-            className="hidden"
-            onChange={handleFileChange}
-          />
-        </div>
-        <div className="flex justify-end mt-3">
-          <Button onClick={handleParse} disabled={!links.trim() || loading}>
-            {loading ? (
-              <>
-                <Loader2 size={16} className="mr-1 animate-spin" />
-                解析中...
-              </>
-            ) : (
-              "开始解析"
-            )}
-          </Button>
-        </div>
+            <p className="text-[11px] text-text-secondary leading-relaxed">
+              提示：在浏览器登录 B 站，按 F12 → 网络 → 复制任意请求中的 Cookie（需包含 SESSDATA）。配置后可解锁 1080P 画质，大会员账号可解锁更高画质。
+            </p>
+          </div>
+        )}
       </div>
+      <HeroActions>
+        <button
+          className="press-feedback lift-hover flex items-center gap-1.5 h-9 px-3 rounded-lg glass-surface text-text-secondary hover:text-purple-500 text-xs"
+          onClick={handleFileImport}
+          title="从 .txt / .csv 文件导入链接"
+        >
+          <Upload size={15} />
+          导入文件
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".txt,.csv"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+        <button
+          className={cn(
+            "press-feedback lift-hover flex items-center gap-1.5 h-9 px-3 rounded-lg glass-surface text-xs transition-colors",
+            cookiePanelOpen ? "text-purple-500" : "text-text-secondary hover:text-purple-500",
+          )}
+          onClick={() => setCookiePanelOpen(!cookiePanelOpen)}
+          title="配置 B 站 Cookie"
+        >
+          <KeyRound size={15} className={cookieStatus.icon} />
+          <span className={cn("w-1.5 h-1.5 rounded-full", cookieStatus.dot)} />
+          {cookieStatus.text}
+          <motion.span
+            animate={{ rotate: cookiePanelOpen ? 180 : 0 }}
+            transition={{ duration: 0.2 }}
+            className="flex items-center"
+          >
+            <ChevronDown size={12} />
+          </motion.span>
+        </button>
+        <span className="flex-1" />
+        <ParseButton onClick={handleParse} disabled={!links.trim()} loading={loading} />
+      </HeroActions>
+      </>
+      }
+      >
 
       {/* Error State */}
       {error && (
@@ -717,23 +709,16 @@ export default function BiliFetchPage() {
         </div>
       )}
 
-      {/* Empty / Loading state */}
-      {results.length === 0 && !error && (
+      {/* Loading state */}
+      {results.length === 0 && !error && loading && (
         <div className="flex-1 flex items-center justify-center text-text-disabled">
-          {loading ? (
-            <div className="text-center">
-              <Loader2 size={32} className="mx-auto mb-3 animate-spin" />
-              <p className="text-sm">正在解析 B 站链接...</p>
-            </div>
-          ) : (
-            <div className="text-center">
-              <Monitor size={48} className="mx-auto mb-3 opacity-50" />
-              <p className="text-sm">粘贴 B 站视频链接后点击"开始解析"</p>
-              <p className="text-xs mt-2 opacity-60">支持 BV / av 号视频，多 P 视频可选择性下载</p>
-            </div>
-          )}
+          <div className="text-center">
+            <Loader2 size={32} className="mx-auto mb-3 animate-spin" />
+            <p className="text-sm">正在解析 B 站链接...</p>
+          </div>
         </div>
       )}
+      </HeroSection>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { Settings, Minus, Square, Maximize2, X, Moon, Sun } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { usePanelStore } from "../../store/panelStore";
 import { useThemeStore } from "../../store/themeStore";
+import { AppLogo } from "./AppLogo";
 
 /** 自定义标题栏组件 — 纯无边框窗口的窗口控制与标题区域 */
 export function TitleBar() {
@@ -49,11 +50,13 @@ export function TitleBar() {
   return (
     <div className="flex items-center h-9 min-h-9 bg-bg-base select-none">
       {/* 左侧：应用图标 + 名称（可拖拽区域） */}
-      <div className="flex items-center gap-2 px-4 h-full" data-tauri-drag-region>
-        <div className="w-6 h-6 rounded-md bg-purple-500 flex items-center justify-center text-white text-xs font-bold">
-          V
-        </div>
-        <span className="text-sm font-semibold text-purple-500">VideoGetTool</span>
+      <div className="flex items-center gap-2.5 pl-3 pr-4 h-full" data-tauri-drag-region>
+        <AppLogo size={24} className="lift-hover shrink-0" />
+        <span className="text-[13px] font-bold tracking-tight select-none">
+          <span className="text-text-primary">Video</span>
+          <span className="bg-gradient-to-r from-purple-500 to-fuchsia-500 bg-clip-text text-transparent">Get</span>
+          <span className="text-text-primary">Tool</span>
+        </span>
       </div>
 
       {/* 中间：弹性拖拽区域（不包含右侧按钮，按钮无需 pointer-events hack） */}
