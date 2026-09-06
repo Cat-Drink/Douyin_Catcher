@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { AppShell } from "./layouts/AppShell";
+import { SplashScreen } from "./components/app/SplashScreen";
 import { ToastContainer } from "./components/ui/toast";
 import { useThemeStore } from "./store/themeStore";
 import { useNotificationService } from "./hooks/useNotificationService";
@@ -34,6 +35,8 @@ function App() {
         </Route>
       </Routes>
       <ToastContainer />
+      {/* 启动页动效：覆盖全窗播放一次后自动退场，点击/按键可跳过 */}
+      <SplashScreen />
     </>
   );
 }

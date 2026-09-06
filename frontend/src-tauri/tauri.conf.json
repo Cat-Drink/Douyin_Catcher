@@ -20,6 +20,7 @@
         "center": true,
         "decorations": false,
         "transparent": false,
+        "backgroundColor": "#F5F0FF",
         "shadow": false,
         "resizable": true,
         "fullscreen": false
