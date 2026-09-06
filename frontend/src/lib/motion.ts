@@ -39,19 +39,6 @@ export const pageVariants: Variants = {
   exit: { opacity: 0, y: -8, transition: { duration: 0.18, ease: "easeIn" } },
 };
 
-/** 抽屉导航项交错出现（收起时高度折叠为 0） */
-export const dockItemVariants: Variants = {
-  collapsed: { opacity: 0, x: -10, scale: 0.85, height: 0, marginBottom: 0 },
-  expanded: (i: number) => ({
-    opacity: 1,
-    x: 0,
-    scale: 1,
-    height: 36,
-    marginBottom: 4,
-    transition: { delay: 0.04 * i, duration: 0.25, ease: EASE_OUT_EXPO },
-  }),
-};
-
 /** 悬浮上浮 + 阴影扩散 */
 export const hoverLift = {
   whileHover: { y: -2, transition: { duration: 0.2, ease: EASE_OUT_EXPO } },
