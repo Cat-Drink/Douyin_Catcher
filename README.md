@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/VGT.jpg" alt="VideoGetTool" width="320" style="border-radius: 24px;">
+  <img src="assets/app-icon.png" alt="VideoGetTool" width="112">
 
   # VideoGetTool
 
@@ -135,8 +135,12 @@
 
 ## 📸 界面预览
 
-> <em>界面截图正在路上，以下为布局预览 — 实际界面以最新 Release 为准。</em>
->
+> <em>新版界面截图正在路上，以下为 v0.4.x 早期版本布局预览 — 实际界面以最新 Release 为准。</em>
+
+<p align="center">
+  <img src="assets/VGT.jpg" alt="早期版本界面预览" width="560" style="border-radius: 16px;">
+</p>
+
 > 测试套件已扩展至 **828 项**（覆盖签到算法、链接解析、主页抓取、订阅模式、B 站 WBI 签名与 DASH 下载、后端 API 等模块）。
 
 <br>
