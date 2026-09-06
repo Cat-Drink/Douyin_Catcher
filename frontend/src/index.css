@@ -245,3 +245,52 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-disabled);
 }
+/* ---- 启动页（Splash Screen）主题底色与品牌光斑 ---- */
+.splash-bg-light {
+  background:
+    radial-gradient(120% 90% at 50% 0%, #F5F0FF 0%, rgba(245, 240, 255, 0) 60%),
+    linear-gradient(180deg, #FDFCFF 0%, #F3EDFF 100%);
+}
+.splash-bg-dark {
+  background:
+    radial-gradient(120% 90% at 50% 0%, #1D1233 0%, rgba(29, 18, 51, 0) 60%),
+    linear-gradient(180deg, #0C0817 0%, #140D26 100%);
+}
+
+.splash-blob {
+  position: absolute;
+  width: 64vmax;
+  height: 64vmax;
+  border-radius: 9999px;
+  /* 径向渐变模拟高斯模糊光斑：省去 90px filter 的大面积实时模糊，合成开销趋近于零 */
+  pointer-events: none;
+  /* 仅位移、固定缩放 + will-change：模糊层一次栅格化后纯合成，避免每帧重绘 */
+  will-change: transform;
+  animation: splash-drift 8s var(--ease-out-expo) infinite alternate;
+}
+.splash-blob-a {
+  left: -18vmax;
+  top: -20vmax;
+  background: radial-gradient(closest-side, rgba(139, 92, 246, 0.32), rgba(139, 92, 246, 0) 72%);
+}
+.splash-blob-b {
+  right: -22vmax;
+  bottom: -24vmax;
+  background: radial-gradient(closest-side, rgba(192, 38, 211, 0.2), rgba(192, 38, 211, 0) 72%);
+  animation-delay: -4s;
+}
+.dark .splash-blob-a {
+  background: radial-gradient(closest-side, rgba(124, 58, 237, 0.26), rgba(124, 58, 237, 0) 72%);
+}
+.dark .splash-blob-b {
+  background: radial-gradient(closest-side, rgba(192, 38, 211, 0.14), rgba(192, 38, 211, 0) 72%);
+}
+
+@keyframes splash-drift {
+  from {
+    transform: translate3d(0, -1.5%, 0);
+  }
+  to {
+    transform: translate3d(3.5%, 4%, 0);
+  }
+}
