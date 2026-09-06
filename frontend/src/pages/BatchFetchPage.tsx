@@ -1,12 +1,14 @@
 import { useState, useRef } from "react";
-import { Upload, FileText, Loader2, AlertCircle, ChevronRight, ChevronDown } from "lucide-react";
+import { motion } from "framer-motion";
+import { Upload, Loader2, AlertCircle, ChevronRight, ChevronDown, FileText } from "lucide-react";
 import { Button } from "../components/ui/button";
-import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
 import { proxyImageUrl } from "../lib/api";
 import { useParseStore, extractLinks } from "../store/parseStore";
 import { useToastStore } from "../store/toastStore";
 import { useUiInputStore } from "../store/uiInputStore";
+import { HeroSection, HeroActions, HeroChip, ParseButton } from "../components/app/Hero";
+import { resultItemVariants } from "../lib/motion";
 
 /** ISO8601 时间戳 → 短格式展示 */
 function formatTime(iso: string): string {
@@ -224,79 +226,130 @@ export default function BatchFetchPage() {
     addToast("已清空所有解析结果", "success");
   };
 
-  return (
-    <div className="flex flex-col h-full">
-      {/* Input Area */}
-      <div className="p-6 pb-0">
-        <div className="flex gap-2">
-          <Textarea
-            placeholder="在此粘贴抖音链接，每行一个&#10;支持视频链接、图文链接、用户主页链接"
-            value={links}
-            onChange={(e) => setLinks(e.target.value)}
-            className="flex-1"
-          />
-          <Button
-            variant="secondary"
-            className="h-auto flex-col gap-1 px-4"
-            onClick={handleFileImport}
-          >
-            <Upload size={20} />
-            <span className="text-xs">导入文件</span>
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".txt,.csv"
-            className="hidden"
-            onChange={handleFileChange}
-          />
-        </div>
-        <div className="flex justify-end mt-3">
-          <Button onClick={handleParse} disabled={!links.trim() || loading}>
-            {loading ? (
-              <>
-                <Loader2 size={16} className="mr-1 animate-spin" />
-                解析中...
-              </>
-            ) : (
-              "开始解析"
-            )}
-          </Button>
+  const hero = (
+    <>
+      <div className="p-4 pb-2">
+        <textarea
+          placeholder="在此粘贴抖音链接，每行一个&#10;支持视频链接、图文链接、用户主页链接"
+          value={links}
+          onChange={(e) => setLinks(e.target.value)}
+          rows={links ? 5 : 3}
+          className="w-full bg-transparent border-0 outline-none resize-none text-sm text-text-primary placeholder:text-text-disabled focus:ring-0 leading-relaxed transition-[height]"
+        />
+        <div className="flex flex-wrap gap-1.5 pt-1">
+          <HeroChip onClick={() => setLinks("https://v.douyin.com/iRNBho6/")}>
+            视频链接示例
+          </HeroChip>
+          <HeroChip onClick={() => setLinks("https://www.douyin.com/note/7xxxxxxxx")}>
+            图文链接示例
+          </HeroChip>
+          <span className="px-2 py-1 text-xs text-text-disabled self-center">
+            每行一个链接，支持批量
+          </span>
         </div>
       </div>
+      <HeroActions>
+        <button
+          className="press-feedback lift-hover flex items-center gap-1.5 h-9 px-3 rounded-lg glass-surface text-text-secondary hover:text-purple-500 text-xs"
+          onClick={handleFileImport}
+          title="从 .txt / .csv 文件导入链接"
+        >
+          <Upload size={15} />
+          导入文件
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".txt,.csv"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+        <span className="flex-1" />
+        <Badge variant="video" />
+        <ParseButton disabled={!links.trim()} loading={loading} onClick={handleParse} />
+      </HeroActions>
+    </>
+  );
 
-      {/* Error State */}
-      {error && (
-        <div className="mx-6 mt-3 p-3 bg-red-50 border border-red-200 rounded-sm">
-          <div className="flex items-center gap-2 text-sm text-error">
-            <AlertCircle size={16} />
-            <span>{error}</span>
-          </div>
-        </div>
-      )}
+  return (
+    <div className="flex flex-col h-full">
+      <HeroSection
+        hasResults={parsed.length > 0}
+        loading={loading}
+        hero={hero}
+        footer={
+          parsed.length > 0 ? (
+            <div className="sticky bottom-0 flex items-center gap-3 px-6 h-14 border-t border-border-light glass-surface">
+              <span className="text-xs text-text-secondary flex-1">
+                已选择 {selected.size} 个作品
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-warning"
+                disabled={selected.size === 0}
+                onClick={handleDeleteSelected}
+              >
+                删除选中
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-warning"
+                disabled={failedIndices.length === 0}
+                onClick={handleRetryAllFailed}
+                title="重试所有解析失败的链接"
+              >
+                重试失败项 ({failedIndices.length})
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-error"
+                onClick={handleClearAll}
+              >
+                清空结果
+              </Button>
+              <Button disabled={selected.size === 0} onClick={handleDownload}>
+                开始下载 ({selected.size})
+              </Button>
+            </div>
+          ) : undefined
+        }
+      >
+        {/* Error State */}
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mx-auto w-full max-w-[42rem] px-6 mt-2"
+          >
+            <div className="flex items-center gap-2 p-3 bg-error/10 border border-error/20 rounded-xl text-sm text-error">
+              <AlertCircle size={16} />
+              <span>{error}</span>
+            </div>
+          </motion.div>
+        )}
 
-      {/* Divider */}
-      <div className="mt-4 border-t border-border-light" />
-
-      {/* Results */}
-      {parsed.length > 0 && (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex items-center justify-between px-6 py-2 border-b border-border-light">
-            <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
-              <input
-                type="checkbox"
-                className="w-4 h-4 accent-purple-500"
-                checked={selected.size === parsed.length}
-                onChange={toggleAll}
-              />
-              全选
-            </label>
-            <span className="text-xs text-text-secondary">
-              已选 {selected.size} / 共 {parsed.length} 项
-            </span>
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            {parsed.map((item, i) => {
+        {/* Results（下浮瀑布流渐入） */}
+        {parsed.length > 0 && (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-16 py-2 border-b border-border-light">
+              <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 accent-purple-500"
+                  checked={selected.size === parsed.length}
+                  onChange={toggleAll}
+                />
+                全选
+              </label>
+              <span className="text-xs text-text-secondary">
+                已选 {selected.size} / 共 {parsed.length} 项
+              </span>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-2">
+              {parsed.map((item, i) => {
               const isImageSet = !item.error && item.type === "image_set";
               const isExpanded = expanded.has(i);
               const imgSelCount = isImageSet
@@ -304,9 +357,16 @@ export default function BatchFetchPage() {
                 : 0;
               const totalImgs = item.imageUrls?.length ?? 0;
               return (
-                <div key={item.awemeId || item.url || `item-${item.index}`}>
+                <motion.div
+                  key={item.awemeId || item.url || `item-${item.index}`}
+                  custom={i}
+                  variants={resultItemVariants}
+                  initial="hidden"
+                  animate="visible"
+                  className="lift-hover rounded-xl overflow-hidden mb-1 border border-transparent hover:border-purple-500/20"
+                >
                   <div
-                    className={`flex items-center gap-3 px-6 py-2 border-b border-border-light hover:bg-bg-hover transition-colors cursor-pointer ${selected.has(i) ? "bg-bg-selected" : ""} ${item.error ? "opacity-60" : ""}`}
+                    className={`flex items-center gap-3 px-4 py-2 rounded-xl transition-colors cursor-pointer ${selected.has(i) ? "bg-bg-selected" : "hover:bg-bg-hover"} ${item.error ? "opacity-60" : ""}`}
                     onClick={() => !item.error && toggleSelect(i)}
                   >
                     <input
@@ -330,7 +390,7 @@ export default function BatchFetchPage() {
                     ) : (
                       <span className="w-5 flex-shrink-0" />
                     )}
-                    <div className="w-12 h-12 rounded-sm bg-bg-hover flex-shrink-0 flex items-center justify-center text-text-disabled text-xs overflow-hidden">
+                    <div className="w-12 h-12 rounded-md bg-bg-hover flex-shrink-0 flex items-center justify-center text-text-disabled text-xs overflow-hidden">
                       {item.coverUrl ? (
                         <img src={proxyImageUrl(item.coverUrl)} alt={item.title} className="w-full h-full object-cover" />
                       ) : (
@@ -380,7 +440,7 @@ export default function BatchFetchPage() {
                   </div>
                   {/* 图文条目展开的图片选择区 */}
                   {isImageSet && isExpanded && totalImgs > 0 && (
-                    <div className="px-6 py-3 pl-[5.5rem] bg-bg-gray/50 border-b border-border-light">
+                    <div className="px-4 py-3 pl-[4.5rem] bg-bg-gray/50">
                       <div className="text-xs text-text-secondary mb-2">
                         已勾选 {imgSelCount} / {totalImgs} 张图片
                       </div>
@@ -399,7 +459,7 @@ export default function BatchFetchPage() {
                               <img
                                 src={proxyImageUrl(imgUrl)}
                                 alt={`图片 ${imgIdx + 1}`}
-                                className={`w-full aspect-square object-cover rounded-sm border ${checked ? "border-purple-400" : "border-border-light opacity-40"} transition-colors`}
+                                className={`w-full aspect-square object-cover rounded-md border ${checked ? "border-purple-400" : "border-border-light opacity-40"} transition-colors`}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   toggleImage(i, imgIdx);
@@ -411,65 +471,30 @@ export default function BatchFetchPage() {
                       </div>
                     </div>
                   )}
-                </div>
+                </motion.div>
               );
-            })}
+              })}
+            </div>
           </div>
-          {/* Bottom bar */}
-          <div className="flex items-center gap-3 px-6 h-14 border-t border-border-light bg-bg-input">
-            <span className="text-xs text-text-secondary flex-1">
-              已选择 {selected.size} 个作品
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-warning"
-              disabled={selected.size === 0}
-              onClick={handleDeleteSelected}
-            >
-              删除选中
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-warning"
-              disabled={failedIndices.length === 0}
-              onClick={handleRetryAllFailed}
-              title="重试所有解析失败的链接"
-            >
-              重试失败项 ({failedIndices.length})
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-error"
-              onClick={handleClearAll}
-            >
-              清空结果
-            </Button>
-            <Button disabled={selected.size === 0} onClick={handleDownload}>
-              开始下载 ({selected.size})
-            </Button>
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* Empty / Loading state */}
-      {parsed.length === 0 && !error && (
-        <div className="flex-1 flex items-center justify-center text-text-disabled">
-          {loading ? (
-            <div className="text-center">
-              <Loader2 size={32} className="mx-auto mb-3 animate-spin" />
-              <p className="text-sm">正在解析链接...</p>
-            </div>
-          ) : (
-            <div className="text-center">
-              <FileText size={48} className="mx-auto mb-3 opacity-50" />
-              <p className="text-sm">粘贴链接后点击"开始解析"</p>
-            </div>
-          )}
-        </div>
-      )}
+        {/* Empty / Loading state */}
+        {parsed.length === 0 && !error && (
+          <div className="flex-1 flex items-start justify-center pt-16 text-text-disabled">
+            {loading ? (
+              <div className="text-center">
+                <Loader2 size={32} className="mx-auto mb-3 animate-spin" />
+                <p className="text-sm">正在解析链接...</p>
+              </div>
+            ) : (
+              <div className="text-center">
+                <FileText size={40} className="mx-auto mb-3 opacity-40" />
+                <p className="text-sm">粘贴链接后点击"开始解析"</p>
+              </div>
+            )}
+          </div>
+        )}
+      </HeroSection>
     </div>
   );
 }

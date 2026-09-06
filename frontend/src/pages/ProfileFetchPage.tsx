@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Loader2, AlertCircle, ChevronRight, ChevronDown } from "lucide-react";
-import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { proxyImageUrl } from "../lib/api";
 import { useParseStore } from "../store/parseStore";
 import { useUiInputStore } from "../store/uiInputStore";
 import SubscriptionPanel from "../components/app/SubscriptionPanel";
+import { HeroSection, ParseButton } from "../components/app/Hero";
 
 /** ISO8601 时间戳 → 短格式展示 */
 function formatTime(iso: string): string {
@@ -208,27 +208,24 @@ function ManualFetchView() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Input */}
-      <div className="p-6 pb-3">
-        <div className="flex gap-2">
-          <Input
-            placeholder="粘贴用户主页链接，例如 https://www.douyin.com/user/xxxxx"
-            value={homeUrl}
-            onChange={(e) => setHomeUrl(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleFetch()}
-          />
-          <Button onClick={handleFetch} disabled={!homeUrl.trim() || loading}>
-            {loading ? (
-              <>
-                <Loader2 size={16} className="mr-1 animate-spin" />
-                抓取中
-              </>
-            ) : (
-              "开始抓取"
-            )}
-          </Button>
-        </div>
-      </div>
+      <HeroSection
+        hasResults={results.length > 0}
+        loading={loading}
+        hero={
+          <div className="p-4">
+            <div className="flex items-center gap-2">
+              <input
+                placeholder="粘贴用户主页链接，例如 https://www.douyin.com/user/xxxxx"
+                value={homeUrl}
+                onChange={(e) => setHomeUrl(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleFetch()}
+                className="flex-1 h-10 px-3 rounded-lg bg-transparent border-0 outline-none text-sm text-text-primary placeholder:text-text-disabled focus:ring-0"
+              />
+              <ParseButton disabled={!homeUrl.trim()} loading={loading} onClick={handleFetch} label="开始抓取" />
+            </div>
+          </div>
+        }
+      >
 
       {/* Error State */}
       {error && (
@@ -425,6 +422,7 @@ function ManualFetchView() {
           )}
         </div>
       )}
+      </HeroSection>
     </div>
   );
 }

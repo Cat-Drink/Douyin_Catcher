@@ -4,6 +4,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
+import { HeroSection, ParseButton } from "../components/app/Hero";
 import * as api from "../lib/api";
 import { useToastStore } from "../store/toastStore";
 
@@ -438,8 +439,13 @@ export default function BiliFetchPage() {
 
   return (
     <div className="flex flex-col h-full">
+      <HeroSection
+        hasResults={results.length > 0}
+        loading={loading}
+        hero={
+      <>
       {/* Input Area */}
-      <div className="p-6 pb-0">
+      <div className="p-4 pb-0">
         {/* Cookie Config Bar */}
         <div className="mb-3 p-3 bg-bg-gray/60 border border-border-light rounded-sm">
           <div className="flex items-center justify-between">
@@ -558,18 +564,12 @@ export default function BiliFetchPage() {
           />
         </div>
         <div className="flex justify-end mt-3">
-          <Button onClick={handleParse} disabled={!links.trim() || loading}>
-            {loading ? (
-              <>
-                <Loader2 size={16} className="mr-1 animate-spin" />
-                解析中...
-              </>
-            ) : (
-              "开始解析"
-            )}
-          </Button>
+          <ParseButton onClick={handleParse} disabled={!links.trim()} loading={loading} />
         </div>
       </div>
+      </>
+      }
+      >
 
       {/* Error State */}
       {error && (
@@ -734,6 +734,7 @@ export default function BiliFetchPage() {
           )}
         </div>
       )}
+      </HeroSection>
     </div>
   );
 }
