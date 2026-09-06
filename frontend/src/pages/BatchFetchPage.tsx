@@ -7,7 +7,7 @@ import { proxyImageUrl } from "../lib/api";
 import { useParseStore, extractLinks } from "../store/parseStore";
 import { useToastStore } from "../store/toastStore";
 import { useUiInputStore } from "../store/uiInputStore";
-import { HeroSection, HeroActions, HeroChip, ParseButton } from "../components/app/Hero";
+import { HeroSection, HeroActions, HeroChip, HeroTextarea, ParseButton } from "../components/app/Hero";
 import { resultItemVariants } from "../lib/motion";
 
 /** ISO8601 时间戳 → 短格式展示 */
@@ -229,12 +229,10 @@ export default function BatchFetchPage() {
   const hero = (
     <>
       <div className="p-4 pb-2">
-        <textarea
+        <HeroTextarea
           placeholder="在此粘贴抖音链接，每行一个&#10;支持视频链接、图文链接、用户主页链接"
           value={links}
           onChange={(e) => setLinks(e.target.value)}
-          rows={links ? 5 : 3}
-          className="w-full bg-transparent border-0 outline-none resize-none text-sm text-text-primary placeholder:text-text-disabled focus:ring-0 leading-relaxed transition-[height]"
         />
         <div className="flex flex-wrap gap-1.5 pt-1">
           <HeroChip onClick={() => setLinks("https://v.douyin.com/iRNBho6/")}>

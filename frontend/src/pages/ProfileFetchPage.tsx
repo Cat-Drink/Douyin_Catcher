@@ -219,7 +219,7 @@ function ManualFetchView() {
                 value={homeUrl}
                 onChange={(e) => setHomeUrl(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleFetch()}
-                className="flex-1 h-10 px-3 rounded-lg bg-transparent border-0 outline-none text-sm text-text-primary placeholder:text-text-disabled focus:ring-0"
+                className="flex-1 h-9 px-3 rounded-lg bg-transparent border-0 outline-none text-sm text-text-primary placeholder:text-text-disabled focus:ring-0"
               />
               <ParseButton disabled={!homeUrl.trim()} loading={loading} onClick={handleFetch} label="开始抓取" />
             </div>

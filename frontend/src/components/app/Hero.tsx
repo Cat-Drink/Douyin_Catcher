@@ -1,7 +1,39 @@
+import { useRef } from "react";
 import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { springMorph, hoverLift } from "../../lib/motion";
+
+/**
+ * Hero 卡片内统一的多行输入域：
+ * 透明无边框、自动增高（超过 max-h 内部滚动），三个抓取页共用同一尺寸与排版
+ */
+export function HeroTextarea(
+  props: React.TextareaHTMLAttributes<HTMLTextAreaElement>,
+) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const el = ref.current;
+    if (el) {
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    }
+    props.onChange?.(e);
+  };
+  return (
+    <textarea
+      ref={ref}
+      rows={3}
+      {...props}
+      onChange={handleChange}
+      className={cn(
+        "w-full min-h-[5.25rem] max-h-64 bg-transparent border-0 outline-none resize-none break-all whitespace-pre-wrap overflow-y-auto",
+        "text-sm text-text-primary placeholder:text-text-disabled focus:ring-0 leading-relaxed",
+        props.className,
+      )}
+    />
+  );
+}
 
 /**
  * 居中 Hero 布局容器：
