@@ -406,20 +406,13 @@ function ManualFetchView() {
         </div>
       )}
 
-      {/* Empty / Loading */}
-      {results.length === 0 && !error && (
+      {/* Loading */}
+      {results.length === 0 && !error && loading && (
         <div className="flex-1 flex items-center justify-center text-text-disabled">
-          {loading ? (
-            <div className="text-center">
-              <Loader2 size={32} className="mx-auto mb-3 animate-spin" />
-              <p className="text-sm">正在抓取主页作品...</p>
-            </div>
-          ) : (
-            <div className="text-center">
-              <div className="text-4xl mb-3 opacity-50">👤</div>
-              <p className="text-sm">输入用户主页链接并点击"开始抓取"</p>
-            </div>
-          )}
+          <div className="text-center">
+            <Loader2 size={32} className="mx-auto mb-3 animate-spin" />
+            <p className="text-sm">正在抓取主页作品...</p>
+          </div>
         </div>
       )}
       </HeroSection>

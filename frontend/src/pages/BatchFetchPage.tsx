@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { motion } from "framer-motion";
-import { Upload, Loader2, AlertCircle, ChevronRight, ChevronDown, FileText } from "lucide-react";
+import { Upload, Loader2, AlertCircle, ChevronRight, ChevronDown } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { proxyImageUrl } from "../lib/api";
@@ -478,20 +478,13 @@ export default function BatchFetchPage() {
           </div>
         )}
 
-        {/* Empty / Loading state */}
-        {parsed.length === 0 && !error && (
+        {/* Loading state */}
+        {parsed.length === 0 && !error && loading && (
           <div className="flex-1 flex items-start justify-center pt-16 text-text-disabled">
-            {loading ? (
-              <div className="text-center">
-                <Loader2 size={32} className="mx-auto mb-3 animate-spin" />
-                <p className="text-sm">正在解析链接...</p>
-              </div>
-            ) : (
-              <div className="text-center">
-                <FileText size={40} className="mx-auto mb-3 opacity-40" />
-                <p className="text-sm">粘贴链接后点击"开始解析"</p>
-              </div>
-            )}
+            <div className="text-center">
+              <Loader2 size={32} className="mx-auto mb-3 animate-spin" />
+              <p className="text-sm">正在解析链接...</p>
+            </div>
           </div>
         )}
       </HeroSection>

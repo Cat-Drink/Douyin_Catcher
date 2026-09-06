@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Loader2, AlertCircle, Upload, Monitor, KeyRound, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import { Loader2, AlertCircle, Upload, KeyRound, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
@@ -717,21 +717,13 @@ export default function BiliFetchPage() {
         </div>
       )}
 
-      {/* Empty / Loading state */}
-      {results.length === 0 && !error && (
+      {/* Loading state */}
+      {results.length === 0 && !error && loading && (
         <div className="flex-1 flex items-center justify-center text-text-disabled">
-          {loading ? (
-            <div className="text-center">
-              <Loader2 size={32} className="mx-auto mb-3 animate-spin" />
-              <p className="text-sm">正在解析 B 站链接...</p>
-            </div>
-          ) : (
-            <div className="text-center">
-              <Monitor size={48} className="mx-auto mb-3 opacity-50" />
-              <p className="text-sm">粘贴 B 站视频链接后点击"开始解析"</p>
-              <p className="text-xs mt-2 opacity-60">支持 BV / av 号视频，多 P 视频可选择性下载</p>
-            </div>
-          )}
+          <div className="text-center">
+            <Loader2 size={32} className="mx-auto mb-3 animate-spin" />
+            <p className="text-sm">正在解析 B 站链接...</p>
+          </div>
         </div>
       )}
       </HeroSection>

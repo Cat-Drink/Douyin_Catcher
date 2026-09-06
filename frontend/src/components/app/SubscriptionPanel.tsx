@@ -235,10 +235,7 @@ export default function SubscriptionPanel() {
             <span className="text-sm">加载订阅中...</span>
           </div>
         ) : subscriptions.length === 0 ? (
-          <div className="text-center py-16 text-text-disabled">
-            <div className="text-4xl mb-3 opacity-50">⏰</div>
-            <p className="text-sm">还没有订阅，粘贴用户主页链接开始订阅</p>
-          </div>
+          <div />
         ) : (
           <div className="space-y-3">
             {subscriptions.map((sub) => {
